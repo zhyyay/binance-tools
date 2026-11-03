@@ -13,6 +13,7 @@ use super::super::{
     automation,
     vision::{self, VisionReplyOptions, VisionReplyResult},
 };
+use crate::ui::x_assistant::core::task_queue::run_browser_task;
 
 /// 连续失败上限，防止异常状态下无限空转。
 const MAX_CONSECUTIVE_FAILURES: usize = 10;
@@ -100,7 +101,8 @@ impl AutoReplyRunner {
     ///
     /// 调用视觉识别模块，并根据执行结果分发处理。
     fn run_once(&mut self, options: &VisionReplyOptions, cancel: &AtomicBool) -> Result<()> {
-        match vision::run_visual_reply(options.clone(), cancel) {
+        let result = run_browser_task(|| vision::run_visual_reply(options.clone(), cancel));
+        match result {
             Ok(result) => self.handle_result(result, cancel),
             Err(error) => self.handle_error(error, cancel),
         }
@@ -140,8 +142,10 @@ impl AutoReplyRunner {
         self.last_result = Some(result);
 
         // 正常轮次只滚动，不刷新页面。
-        vision::scroll_to_next_post(cancel, "本轮处理结束，向下查找下一条帖子")
-            .context("全自动流程恢复动作失败")?;
+        run_browser_task(|| {
+            vision::scroll_to_next_post(cancel, "本轮处理结束，向下查找下一条帖子")
+        })
+        .context("全自动流程恢复动作失败")?;
 
         self.check_failure_limit(None)
     }
@@ -186,7 +190,8 @@ impl AutoReplyRunner {
             vision::recover_by_error(cancel, error)
         };
 
-        recovery.with_context(|| format!("全自动错误恢复失败；上一轮错误：{error:#}"))
+        run_browser_task(|| recovery)
+            .with_context(|| format!("全自动错误恢复失败；上一轮错误：{error:#}"))
     }
 
     /// 检查连续失败次数是否达到上限。
