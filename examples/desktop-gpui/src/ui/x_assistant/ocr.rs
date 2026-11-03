@@ -115,9 +115,7 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
 /// 输入后必须能在截图 OCR 文本中匹配到正文，才允许继续提交。
 pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow::Result<bool> {
     let doc = recognize_document(path)?;
-    let expected = normalize_text(content.split("http://").next()
-        .or_else(|| content.split("https://").next())
-        .unwrap_or(content));
+    let expected = normalize_text(content.split(" · ").next().unwrap_or(content));
     let expected = expected.chars().take(32).collect::<String>();
     if expected.chars().count() < 8 {
         anyhow::bail!("待核验的发帖正文过短，不能可靠验证输入结果");
