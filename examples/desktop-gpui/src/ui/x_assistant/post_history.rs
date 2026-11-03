@@ -186,7 +186,7 @@ impl Render for PostHistoryPage {
                 parent.child(
                     div()
                         .text_size(px(12.))
-                        .text_color(theme.danger)
+                        .text_color(palette::error_text())
                         .child(error),
                 )
             })
