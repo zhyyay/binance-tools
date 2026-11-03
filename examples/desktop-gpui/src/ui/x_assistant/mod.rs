@@ -113,6 +113,25 @@ impl XAssistantPage {
         }
     }
 
+    fn start_all_automation(&mut self, cx: &mut Context<Self>) {
+        if self.replying {
+            return;
+        }
+        if self.task_settings.auto_post_enabled {
+            self.error = Some("自动发帖已启用，但发帖浏览器执行器尚未接入。为避免误报成功，本次未启动；请先在任务设置中关闭自动发帖，或等待发帖执行器完成。".to_string());
+            self.status = None;
+            cx.notify();
+            return;
+        }
+        if !self.task_settings.auto_reply_enabled {
+            self.error = Some("没有可启动的自动化任务。请先在「任务设置」中开启自动回复或自动发帖。".to_string());
+            self.status = None;
+            cx.notify();
+            return;
+        }
+        self.start_visual_reply(false, true, true, cx);
+    }
+
     fn start_visual_reply(
         &mut self,
         hover_only: bool,
@@ -447,6 +466,23 @@ impl XAssistantPage {
                     .when(!self.show_auto_post, |button| button.outline())
                     .small()
                     .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
+            )
+            .child(
+                Button::new("x-assistant-start-all-automation")
+                    .label(if self.replying { "自动化运行中…" } else { "开始自动化" })
+                    .when(!self.replying, |button| button.primary())
+                    .when(self.replying, |button| button.outline())
+                    .small()
+                    .disabled(self.replying)
+                    .on_click(cx.listener(|this, _, _, cx| this.start_all_automation(cx))),
+            )
+            .child(
+                Button::new("x-assistant-stop-all-automation")
+                    .label("停止自动化")
+                    .outline()
+                    .small()
+                    .disabled(!self.replying)
+                    .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx))),
             )
             .child(
                 Button::new("x-assistant-reply-list-tab")
