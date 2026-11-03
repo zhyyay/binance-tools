@@ -460,6 +460,20 @@ pub fn count_posts_last_hour_blocking() -> anyhow::Result<u64> {
     Ok(count.max(0) as u64)
 }
 
+/// Age in seconds of the most recently confirmed published post.
+pub fn seconds_since_last_post_blocking() -> anyhow::Result<Option<u64>> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let age: Option<i64> = connection.query_row(
+        "SELECT CAST(strftime('%s', 'now') - strftime('%s', MAX(published_at)) AS INTEGER)
+         FROM x_published_posts
+         WHERE status = 'published' AND published_at IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(age.map(|value| value.max(0) as u64))
+}
+
 /// Upserts a resumable task checkpoint. payload_json should contain only
 /// task data, never credentials or browser session secrets.
 pub fn save_task_checkpoint_blocking(
