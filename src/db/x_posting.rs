@@ -302,14 +302,22 @@ fn update_post_status(
     let connection = super::open_default_connection()?;
     ensure_schema(&connection)?;
     let published = status == "published";
-    let changed = connection.execute(
+    let allowed_previous = match status {
+        "published" | "unknown" => "('submitting', 'unknown')",
+        "failed" => "('pending', 'submitting', 'unknown')",
+        _ => anyhow::bail!("不支持的发帖状态转换：{status}"),
+    };
+    let sql = format!(
         "UPDATE x_published_posts
          SET status = ?2,
              x_post_url = COALESCE(?3, x_post_url),
              published_at = CASE WHEN ?4 THEN CURRENT_TIMESTAMP ELSE published_at END,
              last_error = ?5,
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?1",
+         WHERE id = ?1 AND status IN {allowed_previous}"
+    );
+    let changed = connection.execute(
+        &sql,
         params![id, status, x_post_url, published, last_error],
     )?;
     ensure!(changed == 1, "未找到本地 X 发帖记录：{id}");
