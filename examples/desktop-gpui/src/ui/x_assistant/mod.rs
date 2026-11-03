@@ -118,9 +118,7 @@ impl XAssistantPage {
             return;
         }
         if self.task_settings.auto_post_enabled {
-            self.error = Some("自动发帖已启用，但发帖浏览器执行器尚未接入。为避免误报成功，本次未启动；请先在任务设置中关闭自动发帖，或等待发帖执行器完成。".to_string());
-            self.status = None;
-            cx.notify();
+            self.start_auto_post(cx);
             return;
         }
         if !self.task_settings.auto_reply_enabled {
@@ -130,6 +128,40 @@ impl XAssistantPage {
             return;
         }
         self.start_visual_reply(false, true, true, cx);
+    }
+
+    fn start_auto_post(&mut self, cx: &mut Context<Self>) {
+        if self.replying || !self.task_settings.auto_post_enabled {
+            return;
+        }
+        self.replying = true;
+        self.error = None;
+        self.cancel_reply.store(false, Ordering::Release);
+        self.status = Some("自动发帖已启动；点击停止可结束。".to_string());
+        cx.notify();
+
+        let cancel = Arc::clone(&self.cancel_reply);
+        self._reply_task = cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_spawn(async move {
+                    auto_post::executor::run_loop(&cancel)
+                })
+                .await;
+            _ = this.update(cx, |this, cx| {
+                this.replying = false;
+                match result {
+                    Ok(count) => {
+                        this.error = None;
+                        this.status = Some(format!("自动发帖已停止，本轮确认发布 {count} 条。"));
+                    }
+                    Err(error) => {
+                        this.status = None;
+                        this.error = Some(format!("自动发帖停止：{error:#}"));
+                    }
+                }
+                cx.notify();
+            });
+        });
     }
 
     fn start_visual_reply(
