@@ -135,8 +135,8 @@ pub(super) fn verify_post_published(path: &Path, content: &str) -> anyhow::Resul
     let doc = recognize_document(path)?;
     let text = normalize_text(&doc.text).to_lowercase();
     let confirmations = [
-        normalize_text("Your post was sent"),
-        normalize_text("Post sent"),
+        normalize_text("Your post was sent").to_lowercase(),
+        normalize_text("Post sent").to_lowercase(),
         normalize_text("已发送"),
         normalize_text("你的帖子已发送"),
         normalize_text("帖子已发布"),
@@ -144,7 +144,7 @@ pub(super) fn verify_post_published(path: &Path, content: &str) -> anyhow::Resul
     if confirmations.iter().any(|phrase| text.contains(phrase)) {
         return Ok(true);
     }
-    let expected = normalize_text(content.split(" · ").next().unwrap_or(content));
+    let expected = normalize_text(content.split(" · ").next().unwrap_or(content)).to_lowercase();
     let expected = expected.chars().take(32).collect::<String>();
     Ok(expected.chars().count() >= 8 && text_match_ratio(&text, &expected) >= 0.78)
 }
