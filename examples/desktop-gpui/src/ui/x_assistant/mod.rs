@@ -152,11 +152,13 @@ impl XAssistantPage {
                         stage2_ocr,
                         reply_rules,
                     };
-                    if full_auto {
-                        full_auto::run(options, &cancel)
-                    } else {
-                        vision::run_visual_reply(options, &cancel)
-                    }
+                    core::task_queue::run_browser_task(|| {
+                        if full_auto {
+                            full_auto::run(options, &cancel)
+                        } else {
+                            vision::run_visual_reply(options, &cancel)
+                        }
+                    })
                 })
                 .await;
             _ = this.update(cx, |this, cx| {
