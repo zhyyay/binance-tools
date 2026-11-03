@@ -51,6 +51,8 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
         (2, 1, Some(230)),
         (2, 1, Some(160)),
     ];
+    let width = doc_width(path)? as f32;
+    let height = doc_height(path)? as f32;
 
     for (attempt, (scale_num, scale_den, threshold)) in modes.iter().enumerate() {
         let doc = recognize_document_with_options(path, *scale_num, *scale_den, *threshold)?;
@@ -58,10 +60,10 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
             let text = normalize_text(&line.text);
             let x = (line.left + line.right) * 0.5 / doc.scale_x;
             let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
-            if x < doc_width(path)? as f32 * 0.12
-                || x > doc_width(path)? as f32 * 0.90
-                || y < doc_height(path)? as f32 * 0.12
-                || y > doc_height(path)? as f32 * 0.82
+            if x < width * 0.12
+                || x > width * 0.90
+                || y < height * 0.12
+                || y > height * 0.82
             {
                 return None;
             }
