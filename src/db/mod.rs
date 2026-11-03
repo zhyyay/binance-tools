@@ -18,6 +18,7 @@ pub mod spot;
 pub mod square;
 pub mod task_board;
 pub mod x_assistant;
+pub mod x_posting;
 
 pub const DEFAULT_DATABASE_PATH: &str = "db/binance_tools.sqlite";
 
