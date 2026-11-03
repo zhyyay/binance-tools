@@ -39,8 +39,8 @@ pub(super) fn recognize_compose_reply_page(path: &Path) -> anyhow::Result<serde_
 /// 不使用固定屏幕坐标猜测输入框位置。
 pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(i32, i32)>> {
     let expected = [
-        normalize_text("What's happening?"),
-        normalize_text("What is happening?"),
+        normalize_text("What's happening?").to_lowercase(),
+        normalize_text("What is happening?").to_lowercase(),
         normalize_text("有什么新鲜事"),
         normalize_text("有什么新鲜事？"),
         normalize_text("发布你的帖子"),
@@ -57,7 +57,7 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
     for (attempt, (scale_num, scale_den, threshold)) in modes.iter().enumerate() {
         let doc = recognize_document_with_options(path, *scale_num, *scale_den, *threshold)?;
         let best = doc.lines.iter().filter_map(|line| {
-            let text = normalize_text(&line.text);
+            let text = normalize_text(&line.text).to_lowercase();
             let x = (line.left + line.right) * 0.5 / doc.scale_x;
             let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
             if x < width * 0.12
@@ -93,10 +93,10 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
     let width = doc_width(path)? as f32;
     let height = doc_height(path)? as f32;
     let candidate = doc.lines.iter().filter_map(|line| {
-        let text = normalize_text(&line.text);
+        let text = normalize_text(&line.text).to_lowercase();
         let x = (line.left + line.right) * 0.5 / doc.scale_x;
         let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
-        let label_match = labels.iter().any(|label| text == normalize_text(label));
+        let label_match = labels.iter().any(|label| text == normalize_text(label).to_lowercase());
         (label_match && x >= width * 0.52 && x <= width * 0.99 && y >= height * 0.58)
             .then_some((x, y))
     }).max_by(|left, right| left.1.total_cmp(&right.1));
@@ -115,12 +115,12 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
 /// 输入后必须能在截图 OCR 文本中匹配到正文，才允许继续提交。
 pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow::Result<bool> {
     let doc = recognize_document(path)?;
-    let expected = normalize_text(content.split(" · ").next().unwrap_or(content));
+    let expected = normalize_text(content.split(" · ").next().unwrap_or(content)).to_lowercase();
     let expected = expected.chars().take(32).collect::<String>();
     if expected.chars().count() < 8 {
         anyhow::bail!("待核验的发帖正文过短，不能可靠验证输入结果");
     }
-    let recognized = normalize_text(&doc.text);
+    let recognized = normalize_text(&doc.text).to_lowercase();
     let score = text_match_ratio(&recognized, &expected);
     super::automation::log_event(&format!(
         "[自动发帖 OCR] 正文输入核验：匹配度={:.0}%，要求至少 75%",
@@ -133,7 +133,7 @@ pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow
 /// 调用方必须把记录置为 unknown，绝不能自动重发。
 pub(super) fn verify_post_published(path: &Path, content: &str) -> anyhow::Result<bool> {
     let doc = recognize_document(path)?;
-    let text = normalize_text(&doc.text);
+    let text = normalize_text(&doc.text).to_lowercase();
     let confirmations = [
         normalize_text("Your post was sent"),
         normalize_text("Post sent"),
