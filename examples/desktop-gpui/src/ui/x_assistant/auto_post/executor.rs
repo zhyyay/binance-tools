@@ -93,7 +93,18 @@ pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
             continue;
         }
 
-        match run_once(cancel)? {
+        let next_result = match run_once(cancel) {
+            Ok(result) => result,
+            Err(error) if cancel.load(Ordering::Acquire) => {
+                crate::ui::x_assistant::automation::log_event(&format!(
+                    "收到停止指令，结束当前自动发帖循环：{error:#}"
+                ));
+                return Ok(published_this_run);
+            }
+            Err(error) => return Err(error),
+        };
+
+        match next_result {
             Some(result) if result.outcome == SubmitOutcome::Published => {
                 published_this_run += 1;
                 crate::ui::x_assistant::automation::log_event(&format!(
