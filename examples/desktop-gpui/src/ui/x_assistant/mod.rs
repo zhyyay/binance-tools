@@ -137,7 +137,13 @@ impl XAssistantPage {
         self.replying = true;
         self.error = None;
         self.cancel_reply.store(false, Ordering::Release);
-        self.status = Some("自动发帖已启动；点击停止可结束。".to_string());
+        self.status = Some(if self.task_settings.auto_reply_enabled && self.auto_send {
+            "自动发帖与自动回复已启动；两类任务通过同一浏览器锁串行操作。点击停止可结束。".to_string()
+        } else if self.task_settings.auto_reply_enabled {
+            "自动发帖已启动；自动回复开关虽已开启，但自动发送关闭，本轮只执行发帖。".to_string()
+        } else {
+            "自动发帖已启动；点击停止可结束。".to_string()
+        });
         cx.notify();
 
         let cancel = Arc::clone(&self.cancel_reply);
