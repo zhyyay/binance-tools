@@ -184,14 +184,14 @@ impl AutoReplyRunner {
     /// 帖子信息不完整时短距离补滚；
     /// 其他错误执行随机刷新或滚动。
     fn recover(&self, error: &anyhow::Error, cancel: &AtomicBool) -> Result<()> {
-        let recovery = if vision::is_incomplete_post_error(error) {
-            vision::scroll_down_to_complete_post(cancel, "帖子信息不完整，短距离补滚后重试")
-        } else {
-            vision::recover_by_error(cancel, error)
-        };
-
-        run_browser_task(|| recovery)
-            .with_context(|| format!("全自动错误恢复失败；上一轮错误：{error:#}"))
+        run_browser_task(|| {
+            if vision::is_incomplete_post_error(error) {
+                vision::scroll_down_to_complete_post(cancel, "帖子信息不完整，短距离补滚后重试")
+            } else {
+                vision::recover_by_error(cancel, error)
+            }
+        })
+        .with_context(|| format!("全自动错误恢复失败；上一轮错误：{error:#}"))
     }
 
     /// 检查连续失败次数是否达到上限。
