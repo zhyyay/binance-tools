@@ -162,22 +162,23 @@ pub fn submit_prepared_post(
         }
     })();
 
-    if let Err(error) = operation {
-        let reason = format!("{error:#}");
-        if click_attempted {
-            // 不确定的点击结果绝不能降级成 failed，否则恢复逻辑可能重发。
-            let _ = binance_tools::db::x_posting::mark_post_unknown_blocking(
-                post.post_id,
-                &format!("提交动作可能已发生，但后续流程失败：{reason}"),
-            );
-        } else {
-            let _ = binance_tools::db::x_posting::mark_post_failed_blocking(
-                post.post_id,
-                &reason,
-            );
+    match operation {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            let reason = format!("{error:#}");
+            if click_attempted {
+                // 不确定的点击结果绝不能降级成 failed，否则恢复逻辑可能重发。
+                let _ = binance_tools::db::x_posting::mark_post_unknown_blocking(
+                    post.post_id,
+                    &format!("提交动作可能已发生，但后续流程失败：{reason}"),
+                );
+            } else {
+                let _ = binance_tools::db::x_posting::mark_post_failed_blocking(
+                    post.post_id,
+                    &reason,
+                );
+            }
+            Err(error)
         }
-        return Err(error);
     }
-
-    operation
 }
