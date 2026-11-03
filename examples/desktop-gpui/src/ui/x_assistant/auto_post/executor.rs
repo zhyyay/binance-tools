@@ -40,7 +40,13 @@ pub fn run_once(cancel: &AtomicBool) -> anyhow::Result<Option<SubmitResult>> {
         return Ok(None);
     };
 
-    ensure!(!cancel.load(Ordering::Acquire), "内容已准备，但提交前收到停止指令");
+    if cancel.load(Ordering::Acquire) {
+        binance_tools::db::x_posting::mark_post_failed_blocking(
+            post.post_id,
+            "内容准备完成后、触碰浏览器前收到停止指令",
+        )?;
+        return Ok(None);
+    }
     run_browser_task(|| submit_prepared_post(&post, cancel))
         .with_context(|| format!("执行 X 发帖任务 {} 失败", post.post_id))
         .map(Some)
@@ -133,7 +139,8 @@ pub fn run_with_auto_reply(
     });
 
     let reply_result = crate::ui::x_assistant::auto_reply::run(reply_options, &cancel);
-    if reply_result.is_err() && !cancel.load(Ordering::Acquire) {
+    let reply_failed = reply_result.is_err() && !cancel.load(Ordering::Acquire);
+    if reply_failed {
         cancel.store(true, Ordering::Release);
     }
 
@@ -144,10 +151,8 @@ pub fn run_with_auto_reply(
     match post_result {
         Err(error) => Err(error),
         Ok(published_count) => {
-            if let Err(error) = reply_result {
-                if !cancel.load(Ordering::Acquire) {
-                    return Err(error);
-                }
+            if reply_failed {
+                return reply_result.map(|_| published_count);
             }
             Ok(published_count)
         }
