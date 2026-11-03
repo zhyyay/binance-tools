@@ -182,6 +182,39 @@ pub(super) mod native {
         60 + value % 141
     }
 
+    /// Navigate only to the fixed X compose route; arbitrary URLs are rejected.
+    pub fn navigate_to_x_compose() -> anyhow::Result<()> {
+        activate_browser()?;
+        let hwnd = unsafe { GetForegroundWindow() };
+        anyhow::ensure!(!hwnd.is_invalid(), "无法找到前台浏览器窗口");
+        let mut class_name = [0u16; 128];
+        let count = unsafe { GetClassNameW(hwnd, &mut class_name) }.max(0) as usize;
+        let class_name = String::from_utf16_lossy(&class_name[..count]);
+        anyhow::ensure!(
+            class_name == "Chrome_WidgetWin_1" || class_name == "MozillaWindowClass",
+            "浏览器不在前台，拒绝导航"
+        );
+
+        let key = |vk: u16, up: bool| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(vk),
+                    wScan: 0,
+                    dwFlags: if up { KEYEVENTF_KEYUP } else { Default::default() },
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        };
+        let shortcut = [key(0x11, false), key(0x4C, false), key(0x4C, true), key(0x11, true)];
+        let sent = unsafe { SendInput(&shortcut, size_of::<INPUT>() as i32) };
+        anyhow::ensure!(sent == shortcut.len() as u32, "无法聚焦浏览器地址栏");
+        thread::sleep(Duration::from_millis(180));
+        type_text("https://x.com/compose/post")?;
+        press_enter()
+    }
+
     pub fn type_text(text: &str) -> anyhow::Result<()> {
         for ch in text.chars() {
             if ch == '\r' || ch == '\n' {
@@ -572,6 +605,9 @@ pub(super) mod native {
         bail!("X 辅助桌面控制仅支持 Windows")
     }
     pub fn press_escape() -> anyhow::Result<()> {
+        bail!("X 辅助桌面控制仅支持 Windows")
+    }
+    pub fn navigate_to_x_compose() -> anyhow::Result<()> {
         bail!("X 辅助桌面控制仅支持 Windows")
     }
     pub fn type_text(_: &str) -> anyhow::Result<()> {
