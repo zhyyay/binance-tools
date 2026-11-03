@@ -66,8 +66,54 @@ impl TaskStage {
         )
     }
 
+    pub fn from_str(value: &str) -> Option<Self> {
+        Some(match value {
+            "pending" => Self::Pending,
+            "waiting_for_browser" => Self::WaitingForBrowser,
+            "recognizing_page" => Self::RecognizingPage,
+            "filling_content" => Self::FillingContent,
+            "ready_to_submit" => Self::ReadyToSubmit,
+            "submitting" => Self::Submitting,
+            "verifying_result" => Self::VerifyingResult,
+            "published" => Self::Published,
+            "commenting" => Self::Commenting,
+            "completed" => Self::Completed,
+            "failed" => Self::Failed,
+            "unknown" => Self::Unknown,
+            "cancelled" => Self::Cancelled,
+            _ => return None,
+        })
+    }
+
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Completed | Self::Cancelled)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecoveryDecision {
+    ResumeSafely,
+    VerifyPostOnX,
+    VerifyCommentOnX,
+    RetryAfterConfirmedFailure,
+    SkipCompleted,
+    ManualReview,
+}
+
+pub fn recovery_decision(stage: TaskStage) -> RecoveryDecision {
+    match stage {
+        TaskStage::Pending
+        | TaskStage::WaitingForBrowser
+        | TaskStage::RecognizingPage
+        | TaskStage::FillingContent
+        | TaskStage::ReadyToSubmit => RecoveryDecision::ResumeSafely,
+        TaskStage::Submitting | TaskStage::VerifyingResult | TaskStage::Unknown => {
+            RecoveryDecision::VerifyPostOnX
+        }
+        TaskStage::Published => RecoveryDecision::VerifyCommentOnX,
+        TaskStage::Commenting => RecoveryDecision::VerifyCommentOnX,
+        TaskStage::Failed => RecoveryDecision::RetryAfterConfirmedFailure,
+        TaskStage::Completed | TaskStage::Cancelled => RecoveryDecision::SkipCompleted,
     }
 }
 
@@ -124,7 +170,7 @@ pub fn next_post_delay(
 
 #[cfg(test)]
 mod tests {
-    use super::{SchedulerSignals, TaskKind, TaskStage, next_post_delay, select_next_task};
+    use super::{RecoveryDecision, SchedulerSignals, TaskKind, TaskStage, next_post_delay, recovery_decision, select_next_task};
     use binance_tools::db::x_posting::XAssistantTaskSettings;
     use std::time::Duration;
 
@@ -173,6 +219,8 @@ mod tests {
         assert!(!TaskStage::Submitting.can_resume_without_remote_verification());
         assert!(TaskStage::ReadyToSubmit.can_resume_without_remote_verification());
         assert!(!TaskStage::Commenting.can_resume_without_remote_verification());
+        assert_eq!(recovery_decision(TaskStage::Submitting), RecoveryDecision::VerifyPostOnX);
+        assert_eq!(recovery_decision(TaskStage::Published), RecoveryDecision::VerifyCommentOnX);
     }
 
     #[test]
