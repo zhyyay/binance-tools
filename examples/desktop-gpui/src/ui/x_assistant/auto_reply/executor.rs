@@ -121,8 +121,10 @@ impl AutoReplyRunner {
                 "全自动：该账号 24 小时内已回复，按正常跳过处理；不计失败、不刷新，改为滚动寻找下一帖。",
             );
 
-            return vision::scroll_to_next_post(cancel, "跳过已回复账号，向下查找下一条帖子")
-                .context("跳过重复账号后的滚动失败");
+            return run_browser_task(|| {
+                vision::scroll_to_next_post(cancel, "跳过已回复账号，向下查找下一条帖子")
+            })
+            .context("跳过重复账号后的滚动失败");
         }
 
         if result.completed {
