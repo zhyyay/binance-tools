@@ -384,6 +384,54 @@ pub fn mark_post_comment_completed_blocking(id: i64) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn mark_post_comment_failed_blocking(id: i64, reason: &str) -> anyhow::Result<()> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let changed = connection.execute(
+        "UPDATE x_published_posts
+         SET comment_status = 'failed', last_error = ?2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?1 AND status = 'published'
+           AND comment_status IN ('commenting', 'failed')",
+        params![id, reason],
+    )?;
+    ensure!(changed == 1, "未找到可更新的已发布帖子评论记录：{id}");
+    Ok(())
+}
+
+pub fn list_recoverable_posts_blocking() -> anyhow::Result<Vec<XPublishedPost>> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let mut statement = connection.prepare(
+        "SELECT id, news_id, original_hash, content_hash, content, status,
+                x_post_url, published_at, last_error, comment_status, comment_text,
+                commented_at, created_at, updated_at
+         FROM x_published_posts
+         WHERE status IN ('pending', 'submitting', 'unknown')
+            OR (status = 'published' AND comment_status IN ('pending', 'commenting', 'unknown'))
+         ORDER BY id ASC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(XPublishedPost {
+            id: row.get(0)?,
+            news_id: row.get(1)?,
+            original_hash: row.get(2)?,
+            content_hash: row.get(3)?,
+            content: row.get(4)?,
+            status: row.get(5)?,
+            x_post_url: row.get(6)?,
+            published_at: row.get(7)?,
+            last_error: row.get(8)?,
+            comment_status: row.get(9)?,
+            comment_text: row.get(10)?,
+            commented_at: row.get(11)?,
+            created_at: row.get(12)?,
+            updated_at: row.get(13)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 pub fn mark_post_comment_unknown_blocking(id: i64, reason: &str) -> anyhow::Result<()> {
     let connection = super::open_default_connection()?;
     ensure_schema(&connection)?;
