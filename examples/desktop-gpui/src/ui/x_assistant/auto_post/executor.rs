@@ -47,6 +47,22 @@ pub fn run_once(cancel: &AtomicBool) -> anyhow::Result<Option<SubmitResult>> {
         )?;
         return Ok(None);
     }
+    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
+    if !settings.auto_post_enabled {
+        binance_tools::db::x_posting::mark_post_failed_blocking(
+            post.post_id,
+            "自动发帖开关已关闭，未提交到 X",
+        )?;
+        return Ok(None);
+    }
+    let hourly_count = binance_tools::db::x_posting::count_posts_last_hour_blocking()?;
+    if hourly_count >= u64::from(settings.posts_per_hour.clamp(1, 10)) {
+        binance_tools::db::x_posting::mark_post_failed_blocking(
+            post.post_id,
+            "内容准备期间已达到每小时发布上限，等待下一轮重新准备",
+        )?;
+        return Ok(None);
+    }
     run_browser_task(|| submit_prepared_post(&post, cancel))
         .with_context(|| format!("执行 X 发帖任务 {} 失败", post.post_id))
         .map(Some)
