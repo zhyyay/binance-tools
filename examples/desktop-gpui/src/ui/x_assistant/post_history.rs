@@ -86,8 +86,8 @@ impl TableDelegate for PostHistoryTableDelegate {
         };
         let color = match record.status.as_str() {
             "published" => theme.success,
-            "unknown" | "submitting" => theme.warning,
-            "failed" => theme.danger,
+            "unknown" | "submitting" => palette::muted(theme),
+            "failed" => palette::error_text(),
             _ => palette::text(theme),
         };
         div()
