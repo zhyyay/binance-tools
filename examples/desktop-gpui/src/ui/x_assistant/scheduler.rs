@@ -63,7 +63,6 @@ impl TaskStage {
                 | Self::FillingContent
                 | Self::ReadyToSubmit
                 | Self::Published
-                | Self::Commenting
         )
     }
 
@@ -173,6 +172,7 @@ mod tests {
         assert!(!TaskStage::Unknown.can_resume_without_remote_verification());
         assert!(!TaskStage::Submitting.can_resume_without_remote_verification());
         assert!(TaskStage::ReadyToSubmit.can_resume_without_remote_verification());
+        assert!(!TaskStage::Commenting.can_resume_without_remote_verification());
     }
 
     #[test]
