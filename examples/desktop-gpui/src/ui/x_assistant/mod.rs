@@ -207,13 +207,15 @@ impl XAssistantPage {
                         stage2_ocr,
                         reply_rules,
                     };
-                    core::task_queue::run_browser_task(|| {
-                        if full_auto {
-                            full_auto::run(options, &cancel)
-                        } else {
+                    if full_auto {
+                        // 全自动回复在每轮识图、滚动和恢复动作处分别取得浏览器锁，
+                        // 让自动发帖任务可以在两轮回复之间安全使用同一浏览器。
+                        full_auto::run(options, &cancel)
+                    } else {
+                        core::task_queue::run_browser_task(|| {
                             vision::run_visual_reply(options, &cancel)
-                        }
-                    })
+                        })
+                    }
                 })
                 .await;
             _ = this.update(cx, |this, cx| {
