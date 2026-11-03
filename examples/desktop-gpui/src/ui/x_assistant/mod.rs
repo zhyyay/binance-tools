@@ -1,4 +1,8 @@
 mod automation;
+mod auto_comment;
+mod auto_post;
+mod auto_reply;
+mod core;
 mod crop;
 mod full_auto;
 mod ocr;
@@ -7,6 +11,7 @@ mod option;
 mod post_history;
 mod reply_list;
 mod scheduler;
+mod own_post_reply;
 mod vision;
 use crate::ui::palette;
 
