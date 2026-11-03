@@ -35,6 +35,130 @@ pub(super) fn recognize_compose_reply_page(path: &Path) -> anyhow::Result<serde_
     with_cached_ocr_engine(|engine| engine.recognize_compose_reply_page(path))
 }
 
+/// 在 X 新发帖页面定位编辑区域。只接受 OCR 明确识别到的占位提示，
+/// 不使用固定屏幕坐标猜测输入框位置。
+pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(i32, i32)>> {
+    let expected = [
+        normalize_text("What's happening?"),
+        normalize_text("What is happening?"),
+        normalize_text("有什么新鲜事"),
+        normalize_text("有什么新鲜事？"),
+        normalize_text("发布你的帖子"),
+    ];
+    let modes = [
+        (4, 3, Some(200)),
+        (2, 1, None),
+        (2, 1, Some(230)),
+        (2, 1, Some(160)),
+    ];
+
+    for (attempt, (scale_num, scale_den, threshold)) in modes.iter().enumerate() {
+        let doc = recognize_document_with_options(path, *scale_num, *scale_den, *threshold)?;
+        let best = doc.lines.iter().filter_map(|line| {
+            let text = normalize_text(&line.text);
+            let x = (line.left + line.right) * 0.5 / doc.scale_x;
+            let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
+            if x < doc_width(path)? as f32 * 0.12
+                || x > doc_width(path)? as f32 * 0.90
+                || y < doc_height(path)? as f32 * 0.12
+                || y > doc_height(path)? as f32 * 0.82
+            {
+                return None;
+            }
+            let score = expected.iter()
+                .map(|phrase| text_match_ratio(&text, phrase))
+                .fold(0.0_f32, f32::max);
+            (score >= 0.72).then_some((x, y, score, line.text.as_str()))
+        }).max_by(|left, right| left.2.total_cmp(&right.2));
+
+        if let Some((x, y, score, recognized)) = best {
+            super::automation::log_event(&format!(
+                "[自动发帖 OCR] 编辑区域识别成功：文本={recognized:?}，匹配度={:.0}%，模式={}",
+                score * 100.0, attempt + 1
+            ));
+            return Ok(Some((x.round() as i32, y.round() as i32)));
+        }
+    }
+
+    super::automation::log_event("[自动发帖 OCR] 未识别到发帖编辑区，占位提示不明确，停止操作。");
+    Ok(None)
+}
+
+/// 只有 OCR 在发帖页右下方明确识别到 Post/发帖/发布按钮才返回坐标。
+pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i32, i32)>> {
+    let doc = recognize_document(path)?;
+    let labels = ["post", "发帖", "发布"];
+    let width = doc_width(path)? as f32;
+    let height = doc_height(path)? as f32;
+    let candidate = doc.lines.iter().filter_map(|line| {
+        let text = normalize_text(&line.text);
+        let x = (line.left + line.right) * 0.5 / doc.scale_x;
+        let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
+        let label_match = labels.iter().any(|label| text == normalize_text(label));
+        (label_match && x >= width * 0.52 && x <= width * 0.99 && y >= height * 0.58)
+            .then_some((x, y))
+    }).max_by(|left, right| left.1.total_cmp(&right.1));
+
+    if let Some((x, y)) = candidate {
+        super::automation::log_event(&format!(
+            "[自动发帖 OCR] 已识别到右下方提交按钮，坐标=({x:.0},{y:.0})"
+        ));
+        Ok(Some((x.round() as i32, y.round() as i32)))
+    } else {
+        super::automation::log_event("[自动发帖 OCR] 未识别到可信的 Post/发帖按钮，禁止猜测坐标。");
+        Ok(None)
+    }
+}
+
+/// 输入后必须能在截图 OCR 文本中匹配到正文，才允许继续提交。
+pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow::Result<bool> {
+    let doc = recognize_document(path)?;
+    let expected = normalize_text(content.split("http://").next()
+        .or_else(|| content.split("https://").next())
+        .unwrap_or(content));
+    let expected = expected.chars().take(32).collect::<String>();
+    if expected.chars().count() < 8 {
+        anyhow::bail!("待核验的发帖正文过短，不能可靠验证输入结果");
+    }
+    let recognized = normalize_text(&doc.text);
+    let score = text_match_ratio(&recognized, &expected);
+    super::automation::log_event(&format!(
+        "[自动发帖 OCR] 正文输入核验：匹配度={:.0}%，要求至少 75%",
+        score * 100.0
+    ));
+    Ok(score >= 0.75)
+}
+
+/// 点击提交后只做一次页面核验。无法在页面上找到正文或成功提示时返回 false，
+/// 调用方必须把记录置为 unknown，绝不能自动重发。
+pub(super) fn verify_post_published(path: &Path, content: &str) -> anyhow::Result<bool> {
+    let doc = recognize_document(path)?;
+    let text = normalize_text(&doc.text);
+    let confirmations = [
+        normalize_text("Your post was sent"),
+        normalize_text("Post sent"),
+        normalize_text("已发送"),
+        normalize_text("你的帖子已发送"),
+        normalize_text("帖子已发布"),
+    ];
+    if confirmations.iter().any(|phrase| text.contains(phrase)) {
+        return Ok(true);
+    }
+    let expected = normalize_text(content.split("http://").next()
+        .or_else(|| content.split("https://").next())
+        .unwrap_or(content));
+    let expected = expected.chars().take(32).collect::<String>();
+    Ok(expected.chars().count() >= 8 && text_match_ratio(&text, &expected) >= 0.78)
+}
+
+fn doc_width(path: &Path) -> anyhow::Result<u32> {
+    Ok(image::image_dimensions(path)?.0)
+}
+
+fn doc_height(path: &Path) -> anyhow::Result<u32> {
+    Ok(image::image_dimensions(path)?.1)
+}
+
 pub(super) fn recognize_current_url(path: &Path) -> anyhow::Result<Option<String>> {
     use image::imageops::crop_imm;
 
