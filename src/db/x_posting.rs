@@ -52,6 +52,19 @@ pub struct XAssistantTaskRecord {
     pub updated_at: String,
 }
 
+
+/// Stable FNV-1a 64-bit fingerprint for local deduplication.
+/// This is a duplicate-detection key, not a cryptographic integrity hash.
+pub fn content_fingerprint(value: &str) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in normalized.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
 fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
     connection.execute_batch(
         r#"
@@ -372,6 +385,12 @@ mod tests {
     use rusqlite::Connection;
 
     use super::{ensure_schema, XAssistantTaskSettings};
+
+    #[test]
+    fn fingerprints_are_stable_and_whitespace_normalized() {
+        assert_eq!(super::content_fingerprint("a  b"), super::content_fingerprint("a b"));
+        assert_ne!(super::content_fingerprint("a b"), super::content_fingerprint("a c"));
+    }
 
     #[test]
     fn creates_settings_history_and_recovery_tables() {
