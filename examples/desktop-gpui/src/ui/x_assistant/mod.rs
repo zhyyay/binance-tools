@@ -4,6 +4,7 @@ mod full_auto;
 mod ocr;
 mod ocr_status;
 mod option;
+mod post_history;
 mod reply_list;
 mod scheduler;
 mod vision;
@@ -51,7 +52,9 @@ pub struct XAssistantPage {
     error: Option<String>,
     _reply_task: Task<()>,
     show_reply_list: bool,
+    show_post_history: bool,
     reply_list: Entity<reply_list::ReplyListPage>,
+    post_history: Entity<post_history::PostHistoryPage>,
     task_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
 }
 
@@ -74,6 +77,7 @@ impl XAssistantPage {
         let reply_rules_subscription =
             cx.subscribe_in(&reply_rules, window, Self::on_reply_rules_input);
         let reply_list = cx.new(|cx| reply_list::ReplyListPage::new(window, cx));
+        let post_history = cx.new(|cx| post_history::PostHistoryPage::new(window, cx));
         let task_settings = binance_tools::db::x_posting::load_task_settings_blocking()
             .unwrap_or_default();
 
@@ -93,7 +97,9 @@ impl XAssistantPage {
             error: None,
             _reply_task: Task::ready(()),
             show_reply_list: false,
+            show_post_history: false,
             reply_list,
+            post_history,
             task_settings,
         }
     }
@@ -305,13 +311,22 @@ impl XAssistantPage {
 
     fn open_reply_list(&mut self, cx: &mut Context<Self>) {
         self.show_reply_list = true;
+        self.show_post_history = false;
         self.reply_list.update(cx, |page, cx| page.reload(cx));
         cx.notify();
     }
 
     fn show_reply_flow(&mut self, cx: &mut Context<Self>) {
         self.show_reply_list = false;
+        self.show_post_history = false;
         self.error = None;
+        cx.notify();
+    }
+
+    fn open_post_history(&mut self, cx: &mut Context<Self>) {
+        self.show_reply_list = false;
+        self.show_post_history = true;
+        self.post_history.update(cx, |page, cx| page.reload(cx));
         cx.notify();
     }
 
@@ -382,19 +397,29 @@ impl XAssistantPage {
                     .small()
                     .on_click(cx.listener(|this, _, _, cx| this.open_reply_list(cx))),
             )
+
+            .child(
+                Button::new("x-assistant-post-history-tab")
+                    .label("发帖历史")
+                    .when(self.show_post_history, |button| button.primary())
+                    .when(!self.show_post_history, |button| button.outline())
+                    .small()
+                    .on_click(cx.listener(|this, _, _, cx| this.open_post_history(cx))),
+            )
             .into_any_element()
     }
 }
 
 impl Render for XAssistantPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.show_reply_list {
+        if self.show_reply_list || self.show_post_history {
             return v_flex()
                 .size_full()
                 .gap_3()
                 .p_3()
                 .child(self.render_page_menu(cx))
-                .child(self.reply_list.clone())
+                .when(self.show_reply_list, |page| page.child(self.reply_list.clone()))
+                .when(self.show_post_history, |page| page.child(self.post_history.clone()))
                 .into_any_element();
         }
         let menu = self.render_page_menu(cx);
