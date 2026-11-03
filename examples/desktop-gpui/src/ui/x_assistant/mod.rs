@@ -141,10 +141,26 @@ impl XAssistantPage {
         cx.notify();
 
         let cancel = Arc::clone(&self.cancel_reply);
+        let reply_options = if self.task_settings.auto_reply_enabled && self.auto_send {
+            Some(vision::VisionReplyOptions {
+                api_url: vision::DEFAULT_OLLAMA_URL.to_string(),
+                model: self.vision_model.clone(),
+                auto_send: true,
+                hover_only: false,
+                stage2_ocr: true,
+                reply_rules: self.reply_rules.read(cx).text().to_string(),
+            })
+        } else {
+            None
+        };
         self._reply_task = cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    auto_post::executor::run_loop(&cancel)
+                    if let Some(options) = reply_options {
+                        auto_post::executor::run_with_auto_reply(Arc::clone(&cancel), options)
+                    } else {
+                        auto_post::executor::run_loop(&cancel)
+                    }
                 })
                 .await;
             _ = this.update(cx, |this, cx| {
