@@ -56,6 +56,7 @@ struct NewsCandidate {
     url: Option<String>,
     published_at: Option<String>,
     collected_at: String,
+    hot_score: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -70,9 +71,68 @@ pub struct PreparedPost {
     pub content_hash: String,
 }
 
-/// 从两个新闻表中读取尚未处理的候选新闻，按发布时间/采集时间倒序。
-/// 数据库目前没有可供本模块统一使用的热点分数字段，因此此处按新鲜度排序，
-/// 不伪造“热度分”；后续可在新闻表提供统一 hot_score 后替换排序规则。
+fn hot_score(kind: NewsKind, title: &str, summary: &str, timestamp: &str) -> i64 {
+    let text = format!("{title} {summary}").to_lowercase();
+    let terms: &[(&str, i64)] = match kind {
+        NewsKind::Crypto => &[
+            ("比特币", 5), ("btc", 5), ("以太坊", 5), ("ethereum", 5), ("eth", 4),
+            ("美联储", 5), ("降息", 5), ("加息", 4), ("etf", 5), ("sec", 4),
+            ("监管", 4), ("黑客", 5), ("被盗", 5), ("漏洞", 4), ("清算", 5),
+            ("暴涨", 4), ("暴跌", 4), ("大涨", 3), ("大跌", 3), ("突破", 3),
+            ("历史新高", 5), ("创纪录", 4), ("资金流入", 4), ("资金流出", 4),
+            ("交易所", 3), ("币安", 4), ("上币", 3), ("下架", 3), ("稳定币", 3),
+            ("空投", 2), ("主网", 2), ("融资", 3), ("收购", 3), ("诉讼", 4),
+            ("破产", 5), ("暂停提现", 5), ("清退", 3), ("政策", 3),
+        ],
+        NewsKind::Entertainment => &[
+            ("官宣", 5), ("恋情", 5), ("分手", 5), ("结婚", 4), ("离婚", 5),
+            ("出轨", 5), ("回应", 4), ("声明", 5), ("道歉", 4), ("塌房", 5),
+            ("争议", 4), ("爆料", 4), ("辟谣", 5), ("工作室", 3), ("经纪人", 2),
+            ("演员", 2), ("明星", 2), ("艺人", 2), ("综艺", 2), ("电视剧", 2),
+            ("电影", 2), ("票房", 3), ("定档", 3), ("杀青", 2), ("开机", 2),
+            ("红毯", 3), ("演唱会", 2), ("粉丝", 2), ("网红", 2), ("直播", 2),
+        ],
+    };
+    let mut score = terms.iter()
+        .filter(|(term, _)| text.contains(term))
+        .map(|(_, weight)| *weight)
+        .sum::<i64>();
+
+    let title = title.to_lowercase();
+    let title_terms: &[(&str, i64)] = match kind {
+        NewsKind::Crypto => &[
+            ("突发", 5), ("重磅", 4), ("紧急", 5), ("首次", 2), ("正式", 2),
+            ("宣布", 2), ("巨鲸", 4), ("大额", 3), ("清算", 3),
+        ],
+        NewsKind::Entertainment => &[
+            ("突发", 5), ("重磅", 4), ("紧急", 5), ("官宣", 5), ("回应", 3),
+            ("吃瓜", 5), ("瓜", 2), ("爆料", 5), ("热搜", 4), ("离谱", 3),
+            ("反转", 4), ("笑死", 3), ("搞笑", 3), ("段子", 3), ("声明", 4),
+            ("首次", 2), ("正式", 2), ("曝光", 4),
+        ],
+    };
+    for (term, weight) in title_terms {
+        if title.contains(term) {
+            score += weight;
+        }
+    }
+
+    if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp) {
+        let age_hours = (chrono::Utc::now() - parsed.with_timezone(&chrono::Utc))
+            .num_hours().max(0);
+        score += match age_hours {
+            0..=2 => 8,
+            3..=6 => 6,
+            7..=12 => 4,
+            13..=24 => 2,
+            25..=48 => 1,
+            _ => 0,
+        };
+    }
+    score
+}
+
+/// 复用新闻页面的币圈/娱乐关键词与新鲜度权重，跨来源统一按热点分排序。
 fn load_candidates() -> anyhow::Result<Vec<NewsCandidate>> {
     let connection = open_default_connection()?;
     let mut candidates = Vec::new();
@@ -101,15 +161,27 @@ fn load_candidates() -> anyhow::Result<Vec<NewsCandidate>> {
                 url: row.get(4)?,
                 published_at: row.get(5)?,
                 collected_at: row.get(6)?,
+                hot_score: 0,
             })
         })?;
-        candidates.extend(rows.collect::<Result<Vec<_>, _>>()?);
+        let mut source_candidates = rows.collect::<Result<Vec<_>, _>>()?;
+        for candidate in &mut source_candidates {
+            let timestamp = candidate.published_at.as_deref().unwrap_or(&candidate.collected_at);
+            candidate.hot_score = hot_score(
+                candidate.kind,
+                &candidate.title,
+                &candidate.body,
+                timestamp,
+            );
+        }
+        candidates.extend(source_candidates);
     }
 
     candidates.sort_by(|left, right| {
         let left_time = left.published_at.as_deref().unwrap_or(&left.collected_at);
         let right_time = right.published_at.as_deref().unwrap_or(&right.collected_at);
-        right_time.cmp(left_time)
+        right.hot_score.cmp(&left.hot_score)
+            .then_with(|| right_time.cmp(left_time))
     });
     Ok(candidates)
 }
