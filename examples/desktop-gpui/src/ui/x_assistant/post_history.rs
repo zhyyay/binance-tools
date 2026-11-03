@@ -28,7 +28,8 @@ impl Default for PostHistoryTableDelegate {
         Self {
             columns: vec![
                 Column::new("published_at", "发布时间").width(px(150.)),
-                Column::new("status", "状态").width(px(100.)),
+                Column::new("status", "发帖状态").width(px(100.)),
+                Column::new("comment_status", "评论状态").width(px(100.)),
                 Column::new("content", "发布正文").width(px(420.)),
                 Column::new("url", "X 帖子链接").width(px(240.)),
                 Column::new("news_id", "新闻 ID").width(px(100.)),
@@ -77,6 +78,14 @@ impl TableDelegate for PostHistoryTableDelegate {
                 "submitting" => "发布中".to_string(),
                 "unknown" => "结果待确认".to_string(),
                 "failed" => "失败".to_string(),
+                other => other.to_string(),
+            },
+            "comment_status" => match record.comment_status.as_str() {
+                "pending" => "待评论".to_string(),
+                "commenting" => "评论中".to_string(),
+                "completed" => "已评论".to_string(),
+                "unknown" => "评论结果待确认".to_string(),
+                "failed" => "评论失败".to_string(),
                 other => other.to_string(),
             },
             "content" => record.content.clone(),
