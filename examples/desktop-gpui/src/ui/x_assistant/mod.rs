@@ -5,6 +5,7 @@ mod ocr;
 mod ocr_status;
 mod option;
 mod reply_list;
+mod scheduler;
 mod vision;
 use crate::ui::palette;
 
@@ -25,6 +26,15 @@ use std::{
     },
 };
 
+
+#[derive(Clone, Copy)]
+enum TaskSetting {
+    AutoReply,
+    AutoPost,
+    AutoComment,
+    OwnPostReply,
+}
+
 pub struct XAssistantPage {
     replying: bool,
     auto_send: bool,
@@ -42,6 +52,7 @@ pub struct XAssistantPage {
     _reply_task: Task<()>,
     show_reply_list: bool,
     reply_list: Entity<reply_list::ReplyListPage>,
+    task_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
 }
 
 impl Drop for XAssistantPage {
@@ -63,6 +74,8 @@ impl XAssistantPage {
         let reply_rules_subscription =
             cx.subscribe_in(&reply_rules, window, Self::on_reply_rules_input);
         let reply_list = cx.new(|cx| reply_list::ReplyListPage::new(window, cx));
+        let task_settings = binance_tools::db::x_posting::load_task_settings_blocking()
+            .unwrap_or_default();
 
         Self {
             replying: false,
@@ -81,6 +94,7 @@ impl XAssistantPage {
             _reply_task: Task::ready(()),
             show_reply_list: false,
             reply_list,
+            task_settings,
         }
     }
 
@@ -175,6 +189,118 @@ impl XAssistantPage {
                 cx.notify();
             });
         });
+    }
+
+    fn toggle_task_setting(&mut self, setting: TaskSetting, cx: &mut Context<Self>) {
+        match setting {
+            TaskSetting::AutoReply => self.task_settings.auto_reply_enabled = !self.task_settings.auto_reply_enabled,
+            TaskSetting::AutoPost => self.task_settings.auto_post_enabled = !self.task_settings.auto_post_enabled,
+            TaskSetting::AutoComment => self.task_settings.auto_comment_enabled = !self.task_settings.auto_comment_enabled,
+            TaskSetting::OwnPostReply => self.task_settings.own_post_reply_enabled = !self.task_settings.own_post_reply_enabled,
+        }
+        self.persist_task_settings(cx);
+    }
+
+    fn adjust_posts_per_hour(&mut self, delta: i8, cx: &mut Context<Self>) {
+        let next = i16::from(self.task_settings.posts_per_hour) + i16::from(delta);
+        self.task_settings.posts_per_hour = next.clamp(1, 10) as u8;
+        self.persist_task_settings(cx);
+    }
+
+    fn persist_task_settings(&mut self, cx: &mut Context<Self>) {
+        match binance_tools::db::x_posting::save_task_settings_blocking(&self.task_settings) {
+            Ok(()) => {
+                self.status = Some("X 自动化任务设置已保存到本地 SQLite。".to_string());
+                self.error = None;
+            }
+            Err(error) => {
+                self.error = Some(format!("保存 X 自动化任务设置失败：{error:#}"));
+            }
+        }
+        cx.notify();
+    }
+
+    fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        v_flex()
+            .gap_2()
+            .rounded(px(10.))
+            .border_1()
+            .border_color(palette::border(theme))
+            .bg(palette::surface(theme))
+            .p_3()
+            .child(
+                div()
+                    .text_size(px(14.))
+                    .font_semibold()
+                    .child("自动化任务设置"),
+            )
+            .child(
+                h_flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(
+                        Button::new("x-task-auto-reply")
+                            .small()
+                            .outline()
+                            .label(if self.task_settings.auto_reply_enabled { "自动回复调度：开" } else { "自动回复调度：关" })
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoReply, cx))),
+                    )
+                    .child(
+                        Button::new("x-task-auto-post")
+                            .small()
+                            .outline()
+                            .label(if self.task_settings.auto_post_enabled { "自动发帖：开" } else { "自动发帖：关" })
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoPost, cx))),
+                    )
+                    .child(
+                        Button::new("x-task-auto-comment")
+                            .small()
+                            .outline()
+                            .label(if self.task_settings.auto_comment_enabled { "发布后自动评论：开" } else { "发布后自动评论：关" })
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoComment, cx))),
+                    )
+                    .child(
+                        Button::new("x-task-own-post-reply")
+                            .small()
+                            .outline()
+                            .label(if self.task_settings.own_post_reply_enabled { "回复自己帖子评论：开（预留）" } else { "回复自己帖子评论：关（预留）" })
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::OwnPostReply, cx))),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(div().text_size(px(12.)).child("每小时发布数量"))
+                    .child(
+                        Button::new("x-task-post-rate-minus")
+                            .small()
+                            .outline()
+                            .label("−")
+                            .on_click(cx.listener(|this, _, _, cx| this.adjust_posts_per_hour(-1, cx))),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_semibold()
+                            .child(format!("{} 条", self.task_settings.posts_per_hour)),
+                    )
+                    .child(
+                        Button::new("x-task-post-rate-plus")
+                            .small()
+                            .outline()
+                            .label("+")
+                            .on_click(cx.listener(|this, _, _, cx| this.adjust_posts_per_hour(1, cx))),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(palette::muted(theme))
+                    .child("设置会保存到本地数据库。当前分支先完成配置、发布历史和断点数据层；浏览器发帖执行器接入前，自动发帖开关不会单独启动浏览器任务。"),
+            )
+            .into_any_element()
     }
 
     fn open_reply_list(&mut self, cx: &mut Context<Self>) {
@@ -398,6 +524,7 @@ impl Render for XAssistantPage {
                             })),
                     ),
             )
+            .child(self.render_task_settings(cx))
             .child(
                 v_flex()
                     .gap_2()
