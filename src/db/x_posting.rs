@@ -439,7 +439,8 @@ pub fn mark_post_comment_unknown_blocking(id: i64, reason: &str) -> anyhow::Resu
         "UPDATE x_published_posts
          SET comment_status = 'unknown', last_error = ?2,
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?1 AND status = 'published'",
+         WHERE id = ?1 AND status = 'published'
+           AND comment_status IN ('commenting', 'unknown')",
         params![id, reason],
     )?;
     ensure!(changed == 1, "未找到已发布的 X 帖子记录：{id}");
