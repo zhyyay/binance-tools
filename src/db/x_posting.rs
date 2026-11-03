@@ -37,6 +37,9 @@ pub struct XPublishedPost {
     pub x_post_url: Option<String>,
     pub published_at: Option<String>,
     pub last_error: Option<String>,
+    pub comment_status: String,
+    pub comment_text: Option<String>,
+    pub commented_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -92,6 +95,10 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
             x_post_url TEXT,
             published_at TEXT,
             last_error TEXT,
+            comment_status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (comment_status IN ('pending', 'commenting', 'completed', 'unknown', 'failed')),
+            comment_text TEXT,
+            commented_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
@@ -210,6 +217,17 @@ pub fn reserve_post_blocking(
     ensure_schema(&connection)?;
     let tx = connection.transaction()?;
 
+    let active_duplicate: bool = tx.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM x_published_posts
+            WHERE (original_hash = ?1 OR content_hash = ?2)
+              AND status IN ('pending', 'submitting', 'published', 'unknown')
+        )",
+        params![original_hash, content_hash],
+        |row| row.get(0),
+    )?;
+    ensure!(!active_duplicate, "该新闻或正文已有待处理、发布中或已发布记录，为避免重复发布已拦截");
+
     let existing: Option<(i64, String)> = tx
         .query_row(
             "SELECT id, status FROM x_published_posts
@@ -230,6 +248,7 @@ pub fn reserve_post_blocking(
              SET news_id = ?2, source_url = ?3, original_hash = ?4,
                  content_hash = ?5, content = ?6, status = 'pending',
                  x_post_url = NULL, published_at = NULL, last_error = NULL,
+                 comment_status = 'pending', comment_text = NULL, commented_at = NULL,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?1",
             params![id, news_id, source_url, original_hash, content_hash, content],
@@ -250,7 +269,16 @@ pub fn reserve_post_blocking(
 }
 
 pub fn mark_post_submitting_blocking(id: i64) -> anyhow::Result<()> {
-    update_post_status(id, "submitting", None, None)
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let changed = connection.execute(
+        "UPDATE x_published_posts
+         SET status = 'submitting', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?1 AND status = 'pending'",
+        [id],
+    )?;
+    ensure!(changed == 1, "发帖记录 {id} 不是待发布状态，拒绝重复提交");
+    Ok(())
 }
 
 pub fn mark_post_published_blocking(id: i64, x_post_url: Option<&str>) -> anyhow::Result<()> {
@@ -293,7 +321,8 @@ pub fn list_published_posts_blocking(limit: u32) -> anyhow::Result<Vec<XPublishe
     ensure_schema(&connection)?;
     let mut statement = connection.prepare(
         "SELECT id, news_id, original_hash, content_hash, content, status,
-                x_post_url, published_at, last_error, created_at, updated_at
+                x_post_url, published_at, last_error, comment_status, comment_text,
+                commented_at, created_at, updated_at
          FROM x_published_posts
          ORDER BY id DESC LIMIT ?1",
     )?;
@@ -308,11 +337,57 @@ pub fn list_published_posts_blocking(limit: u32) -> anyhow::Result<Vec<XPublishe
             x_post_url: row.get(6)?,
             published_at: row.get(7)?,
             last_error: row.get(8)?,
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
+            comment_status: row.get(9)?,
+            comment_text: row.get(10)?,
+            commented_at: row.get(11)?,
+            created_at: row.get(12)?,
+            updated_at: row.get(13)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+pub fn mark_post_commenting_blocking(id: i64, comment_text: &str) -> anyhow::Result<()> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let changed = connection.execute(
+        "UPDATE x_published_posts
+         SET comment_status = 'commenting', comment_text = ?2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?1 AND status = 'published'
+           AND comment_status IN ('pending', 'failed')",
+        params![id, comment_text],
+    )?;
+    ensure!(changed == 1, "发帖记录 {id} 尚未确认发布，或评论任务不能启动");
+    Ok(())
+}
+
+pub fn mark_post_comment_completed_blocking(id: i64) -> anyhow::Result<()> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let changed = connection.execute(
+        "UPDATE x_published_posts
+         SET comment_status = 'completed', commented_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?1 AND status = 'published' AND comment_status = 'commenting'",
+        [id],
+    )?;
+    ensure!(changed == 1, "发帖记录 {id} 不存在或评论任务未处于执行状态");
+    Ok(())
+}
+
+pub fn mark_post_comment_unknown_blocking(id: i64, reason: &str) -> anyhow::Result<()> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let changed = connection.execute(
+        "UPDATE x_published_posts
+         SET comment_status = 'unknown', last_error = ?2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?1 AND status = 'published'",
+        params![id, reason],
+    )?;
+    ensure!(changed == 1, "未找到已发布的 X 帖子记录：{id}");
+    Ok(())
 }
 
 pub fn count_posts_last_hour_blocking() -> anyhow::Result<u64> {
