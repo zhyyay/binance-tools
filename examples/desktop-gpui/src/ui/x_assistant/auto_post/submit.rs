@@ -4,7 +4,7 @@
 //! 记录为 unknown，绝不在本流程中自动重试。
 
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::Duration,
