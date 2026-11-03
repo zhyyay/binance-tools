@@ -245,10 +245,15 @@ impl XAssistantPage {
             .bg(palette::surface(theme))
             .p_3()
             .child(
-                div()
-                    .text_size(px(14.))
-                    .font_semibold()
-                    .child("自动化任务设置"),
+                v_flex()
+                    .gap_1()
+                    .child(div().text_size(px(14.)).font_semibold().child("自动化任务开关"))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(palette::muted(theme))
+                            .child("开启后纳入任务调度；关闭后不会安排对应类型的任务。"),
+                    ),
             )
             .child(
                 h_flex()
@@ -259,6 +264,7 @@ impl XAssistantPage {
                             .small()
                             .outline()
                             .label(if self.task_settings.auto_reply_enabled { "自动回复调度：开" } else { "自动回复调度：关" })
+                            .when(self.task_settings.auto_reply_enabled, |button| button.primary())
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoReply, cx))),
                     )
                     .child(
@@ -266,6 +272,7 @@ impl XAssistantPage {
                             .small()
                             .outline()
                             .label(if self.task_settings.auto_post_enabled { "自动发帖：开" } else { "自动发帖：关" })
+                            .when(self.task_settings.auto_post_enabled, |button| button.primary())
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoPost, cx))),
                     )
                     .child(
@@ -273,6 +280,7 @@ impl XAssistantPage {
                             .small()
                             .outline()
                             .label(if self.task_settings.auto_comment_enabled { "发布后自动评论：开" } else { "发布后自动评论：关" })
+                            .when(self.task_settings.auto_comment_enabled, |button| button.primary())
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoComment, cx))),
                     )
                     .child(
@@ -280,6 +288,7 @@ impl XAssistantPage {
                             .small()
                             .outline()
                             .label(if self.task_settings.own_post_reply_enabled { "回复自己帖子评论：开（预留）" } else { "回复自己帖子评论：关（预留）" })
+                            .when(self.task_settings.own_post_reply_enabled, |button| button.primary())
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::OwnPostReply, cx))),
                     ),
             )
@@ -404,8 +413,14 @@ impl XAssistantPage {
             .child(
                 Button::new("x-assistant-reply-flow-tab")
                     .label("自动回复")
-                    .when(!self.show_reply_list && !self.show_post_history, |button| button.primary())
-                    .when(self.show_reply_list || self.show_post_history, |button| button.outline())
+                    .when(
+                        !self.show_reply_list && !self.show_post_history && !self.show_task_settings,
+                        |button| button.primary(),
+                    )
+                    .when(
+                        self.show_reply_list || self.show_post_history || self.show_task_settings,
+                        |button| button.outline(),
+                    )
                     .small()
                     .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
             )
