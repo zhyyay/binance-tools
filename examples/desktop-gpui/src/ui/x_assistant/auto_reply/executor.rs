@@ -101,11 +101,12 @@ impl AutoReplyRunner {
     ///
     /// 调用视觉识别模块，并根据执行结果分发处理。
     fn run_once(&mut self, options: &VisionReplyOptions, cancel: &AtomicBool) -> Result<()> {
-        let result = run_browser_task(|| vision::run_visual_reply(options.clone(), cancel));
-        match result {
-            Ok(result) => self.handle_result(result, cancel),
-            Err(error) => self.handle_error(error, cancel),
-        }
+        run_browser_task(|| {
+            match vision::run_visual_reply(options.clone(), cancel) {
+                Ok(result) => self.handle_result(result, cancel),
+                Err(error) => self.handle_error(error, cancel),
+            }
+        })
     }
 
     /// 处理正常返回的识图结果。
@@ -121,10 +122,8 @@ impl AutoReplyRunner {
                 "全自动：该账号 24 小时内已回复，按正常跳过处理；不计失败、不刷新，改为滚动寻找下一帖。",
             );
 
-            return run_browser_task(|| {
-                vision::scroll_to_next_post(cancel, "跳过已回复账号，向下查找下一条帖子")
-            })
-            .context("跳过重复账号后的滚动失败");
+            return vision::scroll_to_next_post(cancel, "跳过已回复账号，向下查找下一条帖子")
+                .context("跳过重复账号后的滚动失败");
         }
 
         if result.completed {
@@ -144,10 +143,8 @@ impl AutoReplyRunner {
         self.last_result = Some(result);
 
         // 正常轮次只滚动，不刷新页面。
-        run_browser_task(|| {
-            vision::scroll_to_next_post(cancel, "本轮处理结束，向下查找下一条帖子")
-        })
-        .context("全自动流程恢复动作失败")?;
+        vision::scroll_to_next_post(cancel, "本轮处理结束，向下查找下一条帖子")
+            .context("全自动流程恢复动作失败")?;
 
         self.check_failure_limit(None)
     }
@@ -186,14 +183,12 @@ impl AutoReplyRunner {
     /// 帖子信息不完整时短距离补滚；
     /// 其他错误执行随机刷新或滚动。
     fn recover(&self, error: &anyhow::Error, cancel: &AtomicBool) -> Result<()> {
-        run_browser_task(|| {
-            if vision::is_incomplete_post_error(error) {
-                vision::scroll_down_to_complete_post(cancel, "帖子信息不完整，短距离补滚后重试")
-            } else {
-                vision::recover_by_error(cancel, error)
-            }
-        })
-        .with_context(|| format!("全自动错误恢复失败；上一轮错误：{error:#}"))
+        let recovery = if vision::is_incomplete_post_error(error) {
+            vision::scroll_down_to_complete_post(cancel, "帖子信息不完整，短距离补滚后重试")
+        } else {
+            vision::recover_by_error(cancel, error)
+        };
+        recovery.with_context(|| format!("全自动错误恢复失败；上一轮错误：{error:#}"))
     }
 
     /// 检查连续失败次数是否达到上限。
