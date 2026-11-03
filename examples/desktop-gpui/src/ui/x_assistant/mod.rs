@@ -58,6 +58,7 @@ pub struct XAssistantPage {
     _reply_task: Task<()>,
     show_reply_list: bool,
     show_post_history: bool,
+    show_task_settings: bool,
     reply_list: Entity<reply_list::ReplyListPage>,
     post_history: Entity<post_history::PostHistoryPage>,
     task_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
@@ -103,6 +104,7 @@ impl XAssistantPage {
             _reply_task: Task::ready(()),
             show_reply_list: false,
             show_post_history: false,
+            show_task_settings: false,
             reply_list,
             post_history,
             task_settings,
@@ -319,6 +321,7 @@ impl XAssistantPage {
     fn open_reply_list(&mut self, cx: &mut Context<Self>) {
         self.show_reply_list = true;
         self.show_post_history = false;
+        self.show_task_settings = false;
         self.reply_list.update(cx, |page, cx| page.reload(cx));
         cx.notify();
     }
@@ -326,6 +329,7 @@ impl XAssistantPage {
     fn show_reply_flow(&mut self, cx: &mut Context<Self>) {
         self.show_reply_list = false;
         self.show_post_history = false;
+        self.show_task_settings = false;
         self.error = None;
         cx.notify();
     }
@@ -333,7 +337,16 @@ impl XAssistantPage {
     fn open_post_history(&mut self, cx: &mut Context<Self>) {
         self.show_reply_list = false;
         self.show_post_history = true;
+        self.show_task_settings = false;
         self.post_history.update(cx, |page, cx| page.reload(cx));
+        cx.notify();
+    }
+
+    fn open_task_settings(&mut self, cx: &mut Context<Self>) {
+        self.show_reply_list = false;
+        self.show_post_history = false;
+        self.show_task_settings = true;
+        self.error = None;
         cx.notify();
     }
 
@@ -413,12 +426,49 @@ impl XAssistantPage {
                     .small()
                     .on_click(cx.listener(|this, _, _, cx| this.open_post_history(cx))),
             )
+            .child(
+                Button::new("x-assistant-task-settings-tab")
+                    .label("任务设置")
+                    .when(self.show_task_settings, |button| button.primary())
+                    .when(!self.show_task_settings, |button| button.outline())
+                    .small()
+                    .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
+            )
             .into_any_element()
     }
 }
 
 impl Render for XAssistantPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.show_task_settings {
+            let menu = self.render_page_menu(cx);
+            let task_settings = self.render_task_settings(cx);
+            let theme = cx.theme();
+            return v_flex()
+                .size_full()
+                .gap_3()
+                .p_4()
+                .child(menu)
+                .child(
+                    v_flex()
+                        .gap_1()
+                        .rounded(px(12.))
+                        .border_1()
+                        .border_color(palette::border(theme))
+                        .bg(palette::surface(theme))
+                        .p_4()
+                        .child(div().text_size(px(20.)).font_semibold().child("任务设置"))
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .text_color(palette::muted(theme))
+                                .child("集中管理自动回复、自动发帖、自动评论和发布频率。这里的开关只负责任务配置，不会和回复操作按钮混排。"),
+                        ),
+                )
+                .child(task_settings)
+                .into_any_element();
+        }
+
         if self.show_reply_list || self.show_post_history {
             return v_flex()
                 .size_full()
@@ -430,8 +480,6 @@ impl Render for XAssistantPage {
                 .into_any_element();
         }
         let menu = self.render_page_menu(cx);
-        // 先完成需要可变借用 cx 的设置面板渲染，再获取主题引用。
-        let task_settings = self.render_task_settings(cx);
         let theme = cx.theme();
         let selected_image = self.screenshots.get(self.selected_screenshot).cloned();
         let zoom_image = selected_image.clone();
@@ -558,7 +606,6 @@ impl Render for XAssistantPage {
                             })),
                     ),
             )
-            .child(task_settings)
             .child(
                 v_flex()
                     .gap_2()
