@@ -59,6 +59,7 @@ pub struct XAssistantPage {
     show_reply_list: bool,
     show_post_history: bool,
     show_task_settings: bool,
+    show_auto_post: bool,
     reply_list: Entity<reply_list::ReplyListPage>,
     post_history: Entity<post_history::PostHistoryPage>,
     task_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
@@ -105,6 +106,7 @@ impl XAssistantPage {
             show_reply_list: false,
             show_post_history: false,
             show_task_settings: false,
+            show_auto_post: false,
             reply_list,
             post_history,
             task_settings,
@@ -331,6 +333,7 @@ impl XAssistantPage {
         self.show_reply_list = true;
         self.show_post_history = false;
         self.show_task_settings = false;
+        self.show_auto_post = false;
         self.reply_list.update(cx, |page, cx| page.reload(cx));
         cx.notify();
     }
@@ -339,6 +342,7 @@ impl XAssistantPage {
         self.show_reply_list = false;
         self.show_post_history = false;
         self.show_task_settings = false;
+        self.show_auto_post = false;
         self.error = None;
         cx.notify();
     }
@@ -347,6 +351,7 @@ impl XAssistantPage {
         self.show_reply_list = false;
         self.show_post_history = true;
         self.show_task_settings = false;
+        self.show_auto_post = false;
         self.post_history.update(cx, |page, cx| page.reload(cx));
         cx.notify();
     }
@@ -355,7 +360,18 @@ impl XAssistantPage {
         self.show_reply_list = false;
         self.show_post_history = false;
         self.show_task_settings = true;
+        self.show_auto_post = false;
         self.error = None;
+        cx.notify();
+    }
+
+    fn open_auto_post(&mut self, cx: &mut Context<Self>) {
+        self.show_reply_list = false;
+        self.show_post_history = false;
+        self.show_task_settings = false;
+        self.show_auto_post = true;
+        self.error = None;
+        self.status = None;
         cx.notify();
     }
 
@@ -414,15 +430,23 @@ impl XAssistantPage {
                 Button::new("x-assistant-reply-flow-tab")
                     .label("自动回复")
                     .when(
-                        !self.show_reply_list && !self.show_post_history && !self.show_task_settings,
+                        !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post,
                         |button| button.primary(),
                     )
                     .when(
-                        self.show_reply_list || self.show_post_history || self.show_task_settings,
+                        self.show_reply_list || self.show_post_history || self.show_task_settings || self.show_auto_post,
                         |button| button.outline(),
                     )
                     .small()
                     .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
+            )
+            .child(
+                Button::new("x-assistant-auto-post-tab")
+                    .label("自动发帖")
+                    .when(self.show_auto_post, |button| button.primary())
+                    .when(!self.show_auto_post, |button| button.outline())
+                    .small()
+                    .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
             )
             .child(
                 Button::new("x-assistant-reply-list-tab")
@@ -481,6 +505,46 @@ impl Render for XAssistantPage {
                         ),
                 )
                 .child(task_settings)
+                .into_any_element();
+        }
+
+        if self.show_auto_post {
+            let menu = self.render_page_menu(cx);
+            let theme = cx.theme();
+            return v_flex()
+                .size_full()
+                .gap_3()
+                .p_4()
+                .child(menu)
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .rounded(px(12.))
+                        .border_1()
+                        .border_color(palette::border(theme))
+                        .bg(palette::surface(theme))
+                        .p_4()
+                        .child(div().text_size(px(20.)).font_semibold().child("自动发帖"))
+                        .child(div().text_size(px(12.)).text_color(palette::muted(theme)).child("独立的自动发帖工作区。任务开关在「任务设置」中管理，实际执行从本页面启动。"))
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(Button::new("x-auto-post-start").label("启动自动发帖").primary().disabled(true))
+                                .child(Button::new("x-auto-post-stop").label("停止").outline().disabled(true)),
+                        )
+                        .child(
+                            div()
+                                .rounded(px(8.))
+                                .border_1()
+                                .border_color(palette::border(theme))
+                                .bg(theme.background)
+                                .p_3()
+                                .text_size(px(12.))
+                                .text_color(palette::muted(theme))
+                                .child("当前分支的自动发帖执行器（打开 X 发帖框、填写内容、提交与结果核验）尚未接入，因此启动按钮暂不可用。执行器完成后会在这里启用启动/停止操作。"),
+                        ),
+                )
                 .into_any_element();
         }
 
