@@ -52,8 +52,9 @@ impl TaskStage {
         }
     }
 
-    /// Only stages before the submit action can be blindly resumed.
-    /// Submitting/Unknown must be reconciled against X before any retry.
+    /// Returns true only when the task can safely restart without repeating a
+    /// potentially submitted action. Published/commenting states still require
+    /// checking the corresponding post or comment on X.
     pub fn can_resume_without_remote_verification(self) -> bool {
         matches!(
             self,
@@ -62,7 +63,6 @@ impl TaskStage {
                 | Self::RecognizingPage
                 | Self::FillingContent
                 | Self::ReadyToSubmit
-                | Self::Published
         )
     }
 
@@ -219,6 +219,7 @@ mod tests {
         assert!(!TaskStage::Submitting.can_resume_without_remote_verification());
         assert!(TaskStage::ReadyToSubmit.can_resume_without_remote_verification());
         assert!(!TaskStage::Commenting.can_resume_without_remote_verification());
+        assert!(!TaskStage::Published.can_resume_without_remote_verification());
         assert_eq!(recovery_decision(TaskStage::Submitting), RecoveryDecision::VerifyPostOnX);
         assert_eq!(recovery_decision(TaskStage::Published), RecoveryDecision::VerifyCommentOnX);
     }
