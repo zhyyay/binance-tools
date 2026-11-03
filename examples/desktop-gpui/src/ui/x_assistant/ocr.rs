@@ -144,9 +144,7 @@ pub(super) fn verify_post_published(path: &Path, content: &str) -> anyhow::Resul
     if confirmations.iter().any(|phrase| text.contains(phrase)) {
         return Ok(true);
     }
-    let expected = normalize_text(content.split("http://").next()
-        .or_else(|| content.split("https://").next())
-        .unwrap_or(content));
+    let expected = normalize_text(content.split(" · ").next().unwrap_or(content));
     let expected = expected.chars().take(32).collect::<String>();
     Ok(expected.chars().count() >= 8 && text_match_ratio(&text, &expected) >= 0.78)
 }
