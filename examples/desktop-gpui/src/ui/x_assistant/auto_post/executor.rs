@@ -4,7 +4,10 @@
 //! 未确认的提交状态会立即停止调度，等待人工核验。
 
 use std::{
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::Duration,
 };
@@ -20,10 +23,9 @@ use crate::ui::x_assistant::core::{scheduler::next_post_delay, task_queue::run_b
 fn wait_or_cancel(cancel: &AtomicBool, duration: Duration) -> anyhow::Result<()> {
     let mut remaining = duration;
     while !remaining.is_zero() {
-        ensure!(
-            !cancel.load(Ordering::Acquire),
-            "自动发帖已停止"
-        );
+        if cancel.load(Ordering::Acquire) {
+            return Ok(());
+        }
         let slice = remaining.min(Duration::from_secs(1));
         thread::sleep(slice);
         remaining = remaining.saturating_sub(slice);
@@ -50,7 +52,9 @@ pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
     let mut published_this_run = 0_u64;
 
     loop {
-        ensure!(!cancel.load(Ordering::Acquire), "自动发帖已停止");
+        if cancel.load(Ordering::Acquire) {
+            return Ok(published_this_run);
+        }
 
         let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
         if !settings.auto_post_enabled {
@@ -64,7 +68,9 @@ pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
             crate::ui::x_assistant::automation::log_event(&format!(
                 "自动发帖达到每小时上限 {hourly_limit}，等待 60 秒后重新检查。"
             ));
-            wait_or_cancel(cancel, Duration::from_secs(60))?;
+            if wait_or_cancel(cancel, Duration::from_secs(60)).is_err() {
+                return Ok(published_this_run);
+            }
             continue;
         }
 
@@ -75,7 +81,9 @@ pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
                 "自动发帖频率控制：还需等待 {} 秒。",
                 delay.as_secs()
             ));
-            wait_or_cancel(cancel, delay)?;
+            if wait_or_cancel(cancel, delay).is_err() {
+                return Ok(published_this_run);
+            }
             continue;
         }
 
@@ -101,8 +109,47 @@ pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
                 crate::ui::x_assistant::automation::log_event(
                     "当前两类新闻均无可发布候选，60 秒后重新检查。"
                 );
-                wait_or_cancel(cancel, Duration::from_secs(60))?;
+                if wait_or_cancel(cancel, Duration::from_secs(60)).is_err() {
+                    return Ok(published_this_run);
+                }
             }
+        }
+    }
+}
+
+/// 同时运行自动发帖与自动回复。两个循环各自只在单个浏览器动作期间持锁，
+/// 通过同一把 browser lease 串行访问 X 页面；任一循环遇到严重错误会停止另一循环。
+pub fn run_with_auto_reply(
+    cancel: Arc<AtomicBool>,
+    reply_options: crate::ui::x_assistant::vision::VisionReplyOptions,
+) -> anyhow::Result<u64> {
+    let post_cancel = Arc::clone(&cancel);
+    let post_worker = thread::spawn(move || {
+        let result = run_loop(&post_cancel);
+        if result.is_err() {
+            post_cancel.store(true, Ordering::Release);
+        }
+        result
+    });
+
+    let reply_result = crate::ui::x_assistant::auto_reply::run(reply_options, &cancel);
+    if reply_result.is_err() && !cancel.load(Ordering::Acquire) {
+        cancel.store(true, Ordering::Release);
+    }
+
+    let post_result = post_worker
+        .join()
+        .map_err(|_| anyhow::anyhow!("自动发帖工作线程异常退出"))?;
+
+    match post_result {
+        Err(error) => Err(error),
+        Ok(published_count) => {
+            if let Err(error) = reply_result {
+                if !cancel.load(Ordering::Acquire) {
+                    return Err(error);
+                }
+            }
+            Ok(published_count)
         }
     }
 }
