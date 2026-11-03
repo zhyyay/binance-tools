@@ -463,7 +463,7 @@ impl XAssistantPage {
 
     fn stop_visual_reply(&mut self, cx: &mut Context<Self>) {
         self.cancel_reply.store(true, Ordering::Relaxed);
-        self.status = Some("已停止，正在中断 AI 识图。".to_string());
+        self.status = Some("正在停止自动化任务；若发布操作可能已发生，结果会保留为待核验状态，不会自动重发。".to_string());
         cx.notify();
     }
 
