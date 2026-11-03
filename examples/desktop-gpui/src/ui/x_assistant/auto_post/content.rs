@@ -206,7 +206,7 @@ pub fn prepare_next_post_blocking() -> anyhow::Result<Option<PreparedPost>> {
             url.starts_with("https://") || url.starts_with("http://")
         }) {
             if !content.contains(url) {
-                content.push_str("\n");
+                content.push_str(" · ");
                 content.push_str(url);
             }
         }
