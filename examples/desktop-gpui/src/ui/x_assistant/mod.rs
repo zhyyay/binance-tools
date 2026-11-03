@@ -384,8 +384,8 @@ impl XAssistantPage {
             .child(
                 Button::new("x-assistant-reply-flow-tab")
                     .label("自动回复")
-                    .when(!self.show_reply_list, |button| button.primary())
-                    .when(self.show_reply_list, |button| button.outline())
+                    .when(!self.show_reply_list && !self.show_post_history, |button| button.primary())
+                    .when(self.show_reply_list || self.show_post_history, |button| button.outline())
                     .small()
                     .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
             )
