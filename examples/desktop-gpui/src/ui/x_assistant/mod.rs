@@ -598,8 +598,20 @@ impl Render for XAssistantPage {
                             h_flex()
                                 .gap_2()
                                 .items_center()
-                                .child(Button::new("x-auto-post-start").label("启动自动发帖").primary().disabled(true))
-                                .child(Button::new("x-auto-post-stop").label("停止").outline().disabled(true)),
+                                .child(
+                                    Button::new("x-auto-post-start")
+                                        .label(if self.replying { "自动发帖运行中…" } else { "启动自动发帖" })
+                                        .primary()
+                                        .disabled(self.replying || !self.task_settings.auto_post_enabled)
+                                        .on_click(cx.listener(|this, _, _, cx| this.start_auto_post(cx))),
+                                )
+                                .child(
+                                    Button::new("x-auto-post-stop")
+                                        .label("停止")
+                                        .outline()
+                                        .disabled(!self.replying)
+                                        .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx))),
+                                ),
                         )
                         .child(
                             div()
@@ -610,7 +622,11 @@ impl Render for XAssistantPage {
                                 .p_3()
                                 .text_size(px(12.))
                                 .text_color(palette::muted(theme))
-                                .child("当前分支的自动发帖执行器（打开 X 发帖框、填写内容、提交与结果核验）尚未接入，因此启动按钮暂不可用。执行器完成后会在这里启用启动/停止操作。"),
+                                .child(if self.task_settings.auto_post_enabled {
+                                    "自动发帖已启用。请先打开并登录 X 网页；程序会按每小时上限执行，结果不明确时暂停并要求人工核验。"
+                                } else {
+                                    "请先在「任务设置」中开启自动发帖。启动后会读取币圈与娱乐新闻并按设定频率发布。"
+                                }),
                         ),
                 )
                 .into_any_element();
