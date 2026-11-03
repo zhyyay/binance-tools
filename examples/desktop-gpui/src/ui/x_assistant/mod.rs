@@ -430,6 +430,8 @@ impl Render for XAssistantPage {
                 .into_any_element();
         }
         let menu = self.render_page_menu(cx);
+        // 先完成需要可变借用 cx 的设置面板渲染，再获取主题引用。
+        let task_settings = self.render_task_settings(cx);
         let theme = cx.theme();
         let selected_image = self.screenshots.get(self.selected_screenshot).cloned();
         let zoom_image = selected_image.clone();
@@ -556,7 +558,7 @@ impl Render for XAssistantPage {
                             })),
                     ),
             )
-            .child(self.render_task_settings(cx))
+            .child(task_settings)
             .child(
                 v_flex()
                     .gap_2()
