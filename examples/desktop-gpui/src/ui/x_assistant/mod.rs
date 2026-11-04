@@ -75,22 +75,17 @@ impl Drop for XAssistantPage {
 
 impl XAssistantPage {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        app_log::info!("X 辅助诊断：构造函数进入");
         let rules_value = load_reply_rules();
-        app_log::info!("X 辅助诊断：回复规则读取完成");
         let reply_rules = cx.new(|cx| {
             InputState::new(window, cx)
                 .auto_grow(3, 8)
                 .placeholder("输入回复规则，例如：简短、自然地回应帖子，不要照抄正文。")
                 .default_value(rules_value)
         });
-        app_log::info!("X 辅助诊断：回复规则输入框创建完成");
         let reply_rules_subscription =
             cx.subscribe_in(&reply_rules, window, Self::on_reply_rules_input);
-        app_log::info!("X 辅助诊断：输入框事件订阅完成");
         let task_settings = binance_tools::db::x_posting::load_task_settings_blocking()
             .unwrap_or_default();
-        app_log::info!("X 辅助诊断：任务设置读取完成");
 
         Self {
             replying: false,
@@ -384,10 +379,8 @@ impl XAssistantPage {
     }
 
     fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始渲染任务设置面板");
         let theme = cx.theme();
 
-        app_log::info!("X 辅助诊断：开始构建任务设置开关按钮");
         let auto_reply_button = Button::new("x-task-auto-reply")
             .small()
             .outline()
@@ -395,7 +388,6 @@ impl XAssistantPage {
             .when(self.task_settings.auto_reply_enabled, |button| button.primary())
             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoReply, cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：自动回复设置按钮构建完成");
 
         let auto_post_button = Button::new("x-task-auto-post")
             .small()
@@ -404,7 +396,6 @@ impl XAssistantPage {
             .when(self.task_settings.auto_post_enabled, |button| button.primary())
             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoPost, cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：自动发帖设置按钮构建完成");
 
         let auto_comment_button = Button::new("x-task-auto-comment")
             .small()
@@ -413,7 +404,6 @@ impl XAssistantPage {
             .when(self.task_settings.auto_comment_enabled, |button| button.primary())
             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoComment, cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：自动评论设置按钮构建完成");
 
         let own_post_reply_button = Button::new("x-task-own-post-reply")
             .small()
@@ -422,7 +412,6 @@ impl XAssistantPage {
             .when(self.task_settings.own_post_reply_enabled, |button| button.primary())
             .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::OwnPostReply, cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：自己帖子回复设置按钮构建完成");
 
         let rate_minus_button = Button::new("x-task-post-rate-minus")
             .small()
@@ -436,7 +425,6 @@ impl XAssistantPage {
             .label("+")
             .on_click(cx.listener(|this, _, _, cx| this.adjust_posts_per_hour(1, cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：每小时发布数量按钮构建完成");
 
         let panel = v_flex()
             .gap_2()
@@ -486,7 +474,6 @@ impl XAssistantPage {
                     .child("设置会保存到本地数据库。自动发帖按工作区选择的新闻类型筛选候选，并遵守每小时发布上限。"),
             )
             .into_any_element();
-        app_log::info!("X 辅助诊断：任务设置面板元素树构建完成");
         panel
     }
 
@@ -594,7 +581,6 @@ fn load_reply_rules() -> String {
 impl XAssistantPage {
     // 将每个按钮拆分到独立函数，避免在 GPUI render 回调中创建一个过大的临时栈帧。
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始构建自动回复按钮");
         let button = Button::new("x-assistant-reply-flow-tab")
             .label("自动回复")
             .when(
@@ -608,12 +594,10 @@ impl XAssistantPage {
             .small()
             .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：自动回复按钮构建完成");
         button
     }
 
     fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始构建自动发帖按钮");
         let button = Button::new("x-assistant-auto-post-tab")
             .label("自动发帖")
             .when(self.show_auto_post, |button| button.primary())
@@ -621,12 +605,10 @@ impl XAssistantPage {
             .small()
             .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：自动发帖按钮构建完成");
         button
     }
 
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始构建开始自动化按钮");
         let button = Button::new("x-assistant-start-all-automation")
             .label(if self.replying { "自动化运行中…" } else { "开始自动化" })
             .when(!self.replying, |button| button.primary())
@@ -635,12 +617,10 @@ impl XAssistantPage {
             .disabled(self.replying)
             .on_click(cx.listener(|this, _, _, cx| this.start_all_automation(cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：开始自动化按钮构建完成");
         button
     }
 
     fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始构建停止自动化按钮");
         let button = Button::new("x-assistant-stop-all-automation")
             .label("停止自动化")
             .outline()
@@ -648,12 +628,10 @@ impl XAssistantPage {
             .disabled(!self.replying)
             .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：停止自动化按钮构建完成");
         button
     }
 
     fn render_reply_list_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始构建回复列表按钮");
         let button = Button::new("x-assistant-reply-list-tab")
             .label("回复列表")
             .when(self.show_reply_list, |button| button.primary())
@@ -661,12 +639,10 @@ impl XAssistantPage {
             .small()
             .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：回复列表按钮构建完成");
         button
     }
 
     fn render_post_history_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始构建发帖历史按钮");
         let button = Button::new("x-assistant-post-history-tab")
             .label("发帖历史")
             .when(self.show_post_history, |button| button.primary())
@@ -674,12 +650,10 @@ impl XAssistantPage {
             .small()
             .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：发帖历史按钮构建完成");
         button
     }
 
     fn render_task_settings_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：开始构建任务设置按钮");
         let button = Button::new("x-assistant-task-settings-tab")
             .label("任务设置")
             .when(self.show_task_settings, |button| button.primary())
@@ -687,12 +661,10 @@ impl XAssistantPage {
             .small()
             .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx)))
             .into_any_element();
-        app_log::info!("X 辅助诊断：任务设置按钮构建完成");
         button
     }
 
     fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：已经进入 render_page_menu 函数");
 
         let reply_flow_button = self.render_reply_flow_button(cx);
         let auto_post_button = self.render_auto_post_button(cx);
@@ -702,7 +674,6 @@ impl XAssistantPage {
         let post_history_button = self.render_post_history_button(cx);
         let task_settings_button = self.render_task_settings_button(cx);
 
-        app_log::info!("X 辅助诊断：开始组装菜单容器");
         let menu = h_flex()
             .gap_2()
             .child(reply_flow_button)
@@ -713,7 +684,6 @@ impl XAssistantPage {
             .child(post_history_button)
             .child(task_settings_button)
             .into_any_element();
-        app_log::info!("X 辅助诊断：菜单容器组装完成");
         menu
     }
 }
@@ -721,7 +691,6 @@ impl XAssistantPage {
 impl Render for XAssistantPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.render_diagnostic_logged {
-            app_log::info!("X 辅助诊断：开始渲染页面");
             self.render_diagnostic_logged = true;
         }
         if self.show_task_settings {
@@ -864,30 +833,22 @@ impl Render for XAssistantPage {
                 })
                 .into_any_element();
         }
-        app_log::info!("X 辅助诊断：开始构建主页面菜单");
         app_log::info!(
-            "X 辅助诊断：主页面状态，task_settings={}，auto_post={}，reply_list={}，post_history={}",
             self.show_task_settings,
             self.show_auto_post,
             self.show_reply_list,
             self.show_post_history
         );
-        app_log::info!("X 辅助诊断：即将调用 render_page_menu");
         let menu = self.render_page_menu(cx);
-        app_log::info!("X 辅助诊断：render_page_menu 已返回");
-        app_log::info!("X 辅助诊断：主页面菜单构建完成");
         let theme = cx.theme();
-        app_log::info!("X 辅助诊断：主题读取完成");
         let selected_image = self.screenshots.get(self.selected_screenshot).cloned();
         app_log::info!(
-            "X 辅助诊断：截图状态，数量={}，选中索引={}，是否有选中图片={}",
             self.screenshots.len(),
             self.selected_screenshot,
             selected_image.is_some()
         );
         let zoom_image = selected_image.clone();
 
-        app_log::info!("X 辅助诊断：开始构建主页面元素树");
         let element = v_flex()
             .size_full()
             .relative()
@@ -1247,7 +1208,6 @@ impl Render for XAssistantPage {
                 })
             })
             .into_any_element();
-        app_log::info!("X 辅助诊断：主页面元素树构建完成");
         element
     }
 }
