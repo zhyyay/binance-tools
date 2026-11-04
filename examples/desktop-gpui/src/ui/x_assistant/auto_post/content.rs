@@ -191,17 +191,40 @@ fn load_candidates(filter: NewsFilter) -> anyhow::Result<Vec<NewsCandidate>> {
                 hot_score: 0,
             })
         })?;
-        let mut source_candidates = rows.collect::<Result<Vec<_>, _>>()?;
-        for candidate in &mut source_candidates {
-            let timestamp = candidate.published_at.as_deref().unwrap_or(&candidate.collected_at);
+        let source_candidates = rows.collect::<Result<Vec<_>, _>>()?;
+        let now = app_log::beijing_now();
+        let cutoff = now - chrono::Duration::hours(24);
+        let mut accepted = 0usize;
+        for mut candidate in source_candidates {
+            // 发布时间优先；为空或格式异常时回退到采集时间。
+            let timestamp = candidate.published_at.as_deref()
+                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                .or_else(|| chrono::DateTime::parse_from_rfc3339(&candidate.collected_at).ok());
+            let Some(timestamp) = timestamp else {
+                app_log::warn!(
+                    "X 自动发帖：排除时间无法解析的{}新闻，id={}",
+                    candidate.kind.label(), candidate.id
+                );
+                continue;
+            };
+            let beijing_timestamp = timestamp.with_timezone(&app_log::beijing_timezone());
+            if beijing_timestamp < cutoff || beijing_timestamp > now {
+                continue;
+            }
+            let timestamp_text = beijing_timestamp.to_rfc3339();
             candidate.hot_score = hot_score(
                 candidate.kind,
                 &candidate.title,
                 &candidate.body,
-                timestamp,
+                &timestamp_text,
             );
+            accepted += 1;
+            candidates.push(candidate);
         }
-        candidates.extend(source_candidates);
+        app_log::info!(
+            "X 自动发帖：{}新闻最近 24 小时筛选后保留 {} 条 / 原始 {} 条",
+            kind.label(), accepted, source_candidates.len()
+        );
     }
 
     app_log::info!("X 自动发帖内容准备：数据库读取到 {} 条候选新闻", candidates.len());
