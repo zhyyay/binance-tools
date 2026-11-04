@@ -27,16 +27,18 @@ pub struct SubmitResult {
     pub message: String,
 }
 
-fn screenshot_path(label: &str) -> anyhow::Result<PathBuf> {
+fn screenshot_path(post_id: i64, label: &str) -> anyhow::Result<PathBuf> {
+    // 每条发帖记录使用独立目录，目录名直接对应 x_published_posts.id。
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("data")
         .join("x_assistant")
-        .join("screenshots");
+        .join("auto_post")
+        .join(post_id.to_string());
     std::fs::create_dir_all(&root)
-        .with_context(|| format!("创建截图目录失败：{}", root.display()))?;
+        .with_context(|| format!("创建发帖记录 {} 的截图目录失败：{}", post_id, root.display()))?;
     let timestamp = app_log::beijing_now().format("%Y%m%d-%H%M%S%.3f");
-    Ok(root.join(format!("auto-post-{timestamp}-{label}.png")))
+    Ok(root.join(format!("post-{post_id}-{timestamp}-{label}.png")))
 }
 
 fn check_cancel(cancel: &AtomicBool) -> anyhow::Result<()> {
@@ -58,14 +60,14 @@ fn wait_or_cancel(cancel: &AtomicBool, duration: Duration) -> anyhow::Result<()>
     Ok(())
 }
 
-fn capture_window(label: &str) -> anyhow::Result<PathBuf> {
-    let path = screenshot_path(label)?;
+fn capture_window(post_id: i64, label: &str) -> anyhow::Result<PathBuf> {
+    let path = screenshot_path(post_id, label)?;
     automation::native::capture_window(&path)?;
     Ok(path)
 }
 
-fn capture_desktop(label: &str) -> anyhow::Result<PathBuf> {
-    let path = screenshot_path(label)?;
+fn capture_desktop(post_id: i64, label: &str) -> anyhow::Result<PathBuf> {
+    let path = screenshot_path(post_id, label)?;
     automation::native::capture_desktop(&path)?;
     Ok(path)
 }
@@ -88,7 +90,7 @@ pub fn submit_prepared_post(
         wait_or_cancel(cancel, Duration::from_secs(4))?;
 
         // 地址栏截图用于确认导航目标；客户区截图用于获得可直接点击的坐标。
-        let route_image = capture_desktop("compose-route")?;
+        let route_image = capture_desktop(post.post_id, "compose-route")?;
         let current_url = ocr::recognize_current_url(&route_image)?
             .context("OCR 未能确认当前 X 页面地址")?;
         ensure!(
@@ -97,7 +99,7 @@ pub fn submit_prepared_post(
         );
 
         check_cancel(cancel)?;
-        let page_image = capture_window("compose-empty")?;
+        let page_image = capture_window(post.post_id, "compose-empty")?;
         let (width, height) = automation::native::get_window_client_size()?;
         let input_point = ocr::locate_post_composer_input(&page_image)?
             .context("未能通过 OCR 可靠定位发帖输入框，已停止")?;
@@ -114,7 +116,7 @@ pub fn submit_prepared_post(
         automation::native::type_text(&post.content)?;
         wait_or_cancel(cancel, Duration::from_millis(900))?;
 
-        let typed_image = capture_window("compose-typed")?;
+        let typed_image = capture_window(post.post_id, "compose-typed")?;
         ensure!(
             ocr::verify_post_composer_content(&typed_image, &post.content)?,
             "发帖正文输入后未通过 OCR 核验，未点击发布"
@@ -138,7 +140,7 @@ pub fn submit_prepared_post(
 
         // 最终发布成功校验暂留待补充；先保存提交后的完整页面截图。
         wait_or_cancel(cancel, Duration::from_secs(3))?;
-        let result_page = capture_window("after-submit-awaiting-confirmation")?;
+        let result_page = capture_window(post.post_id, "after-submit-awaiting-confirmation")?;
         let reason = format!(
             "已点击发帖按钮，提交后页面截图已保存：{}。发布结果尚未执行最终校验，等待补充底部提示识别规则；禁止自动重发。",
             result_page.display()
