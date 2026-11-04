@@ -570,6 +570,32 @@ mod tests {
     }
 
     #[test]
+    fn migrates_existing_settings_table_with_news_type_default() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE x_assistant_task_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                auto_reply_enabled INTEGER NOT NULL DEFAULT 0,
+                auto_post_enabled INTEGER NOT NULL DEFAULT 0,
+                auto_comment_enabled INTEGER NOT NULL DEFAULT 0,
+                own_post_reply_enabled INTEGER NOT NULL DEFAULT 0,
+                posts_per_hour INTEGER NOT NULL DEFAULT 3,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO x_assistant_task_settings (id) VALUES (1);",
+        ).unwrap();
+
+        ensure_schema(&connection).unwrap();
+
+        let news_type: String = connection.query_row(
+            "SELECT auto_post_news_type FROM x_assistant_task_settings WHERE id = 1",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(news_type, "all");
+    }
+
+    #[test]
     fn creates_settings_history_and_recovery_tables() {
         let connection = Connection::open_in_memory().unwrap();
         ensure_schema(&connection).unwrap();
@@ -587,6 +613,7 @@ mod tests {
         let defaults = XAssistantTaskSettings::default();
         assert!(!defaults.auto_post_enabled);
         assert_eq!(defaults.posts_per_hour, 3);
+        assert_eq!(defaults.auto_post_news_type, "all");
     }
 
     #[test]
