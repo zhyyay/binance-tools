@@ -804,7 +804,7 @@ impl Render for XAssistantPage {
         let zoom_image = selected_image.clone();
 
         app_log::info!("X 辅助诊断：开始构建主页面元素树");
-        v_flex()
+        let element = v_flex()
             .size_full()
             .relative()
             .gap_3()
@@ -1162,6 +1162,8 @@ impl Render for XAssistantPage {
                     )
                 })
             })
-            .into_any_element()
+            .into_any_element();
+        app_log::info!("X 辅助诊断：主页面元素树构建完成");
+        element
     }
 }
