@@ -192,6 +192,7 @@ fn load_candidates(filter: NewsFilter) -> anyhow::Result<Vec<NewsCandidate>> {
             })
         })?;
         let source_candidates = rows.collect::<Result<Vec<_>, _>>()?;
+        let raw_count = source_candidates.len();
         let now = app_log::beijing_now();
         let cutoff = now - chrono::Duration::hours(24);
         let mut accepted = 0usize;
@@ -223,7 +224,7 @@ fn load_candidates(filter: NewsFilter) -> anyhow::Result<Vec<NewsCandidate>> {
         }
         app_log::info!(
             "X 自动发帖：{}新闻最近 24 小时筛选后保留 {} 条 / 原始 {} 条",
-            kind.label(), accepted, source_candidates.len()
+            kind.label(), accepted, raw_count
         );
     }
 
