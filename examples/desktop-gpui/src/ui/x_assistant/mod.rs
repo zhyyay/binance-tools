@@ -573,73 +573,89 @@ fn load_reply_rules() -> String {
 
 impl XAssistantPage {
     fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
-        h_flex()
-            .gap_2()
-            .child(
-                Button::new("x-assistant-reply-flow-tab")
-                    .label("自动回复")
-                    .when(
-                        !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post,
-                        |button| button.primary(),
-                    )
-                    .when(
-                        self.show_reply_list || self.show_post_history || self.show_task_settings || self.show_auto_post,
-                        |button| button.outline(),
-                    )
-                    .small()
-                    .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
+        app_log::info!("X 辅助诊断：菜单按钮 1/7 自动回复：开始构建");
+        let reply_flow_button = Button::new("x-assistant-reply-flow-tab")
+            .label("自动回复")
+            .when(
+                !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post,
+                |button| button.primary(),
             )
-            .child(
-                Button::new("x-assistant-auto-post-tab")
-                    .label("自动发帖")
-                    .when(self.show_auto_post, |button| button.primary())
-                    .when(!self.show_auto_post, |button| button.outline())
-                    .small()
-                    .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
+            .when(
+                self.show_reply_list || self.show_post_history || self.show_task_settings || self.show_auto_post,
+                |button| button.outline(),
             )
-            .child(
-                Button::new("x-assistant-start-all-automation")
-                    .label(if self.replying { "自动化运行中…" } else { "开始自动化" })
-                    .when(!self.replying, |button| button.primary())
-                    .when(self.replying, |button| button.outline())
-                    .small()
-                    .disabled(self.replying)
-                    .on_click(cx.listener(|this, _, _, cx| this.start_all_automation(cx))),
-            )
-            .child(
-                Button::new("x-assistant-stop-all-automation")
-                    .label("停止自动化")
-                    .outline()
-                    .small()
-                    .disabled(!self.replying)
-                    .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx))),
-            )
-            .child(
-                Button::new("x-assistant-reply-list-tab")
-                    .label("回复列表")
-                    .when(self.show_reply_list, |button| button.primary())
-                    .when(!self.show_reply_list, |button| button.outline())
-                    .small()
-                    .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
-            )
+            .small()
+            .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx)));
+        app_log::info!("X 辅助诊断：菜单按钮 1/7 自动回复：构建完成");
 
-            .child(
-                Button::new("x-assistant-post-history-tab")
-                    .label("发帖历史")
-                    .when(self.show_post_history, |button| button.primary())
-                    .when(!self.show_post_history, |button| button.outline())
-                    .small()
-                    .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx))),
-            )
-            .child(
-                Button::new("x-assistant-task-settings-tab")
-                    .label("任务设置")
-                    .when(self.show_task_settings, |button| button.primary())
-                    .when(!self.show_task_settings, |button| button.outline())
-                    .small()
-                    .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
-            )
-            .into_any_element()
+        app_log::info!("X 辅助诊断：菜单按钮 2/7 自动发帖：开始构建");
+        let auto_post_button = Button::new("x-assistant-auto-post-tab")
+            .label("自动发帖")
+            .when(self.show_auto_post, |button| button.primary())
+            .when(!self.show_auto_post, |button| button.outline())
+            .small()
+            .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx)));
+        app_log::info!("X 辅助诊断：菜单按钮 2/7 自动发帖：构建完成");
+
+        app_log::info!("X 辅助诊断：菜单按钮 3/7 开始自动化：开始构建");
+        let start_all_button = Button::new("x-assistant-start-all-automation")
+            .label(if self.replying { "自动化运行中…" } else { "开始自动化" })
+            .when(!self.replying, |button| button.primary())
+            .when(self.replying, |button| button.outline())
+            .small()
+            .disabled(self.replying)
+            .on_click(cx.listener(|this, _, _, cx| this.start_all_automation(cx)));
+        app_log::info!("X 辅助诊断：菜单按钮 3/7 开始自动化：构建完成");
+
+        app_log::info!("X 辅助诊断：菜单按钮 4/7 停止自动化：开始构建");
+        let stop_all_button = Button::new("x-assistant-stop-all-automation")
+            .label("停止自动化")
+            .outline()
+            .small()
+            .disabled(!self.replying)
+            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)));
+        app_log::info!("X 辅助诊断：菜单按钮 4/7 停止自动化：构建完成");
+
+        app_log::info!("X 辅助诊断：菜单按钮 5/7 回复列表：开始构建");
+        let reply_list_button = Button::new("x-assistant-reply-list-tab")
+            .label("回复列表")
+            .when(self.show_reply_list, |button| button.primary())
+            .when(!self.show_reply_list, |button| button.outline())
+            .small()
+            .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx)));
+        app_log::info!("X 辅助诊断：菜单按钮 5/7 回复列表：构建完成");
+
+        app_log::info!("X 辅助诊断：菜单按钮 6/7 发帖历史：开始构建");
+        let post_history_button = Button::new("x-assistant-post-history-tab")
+            .label("发帖历史")
+            .when(self.show_post_history, |button| button.primary())
+            .when(!self.show_post_history, |button| button.outline())
+            .small()
+            .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx)));
+        app_log::info!("X 辅助诊断：菜单按钮 6/7 发帖历史：构建完成");
+
+        app_log::info!("X 辅助诊断：菜单按钮 7/7 任务设置：开始构建");
+        let task_settings_button = Button::new("x-assistant-task-settings-tab")
+            .label("任务设置")
+            .when(self.show_task_settings, |button| button.primary())
+            .when(!self.show_task_settings, |button| button.outline())
+            .small()
+            .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx)));
+        app_log::info!("X 辅助诊断：菜单按钮 7/7 任务设置：构建完成");
+
+        app_log::info!("X 辅助诊断：开始组装菜单容器");
+        let menu = h_flex()
+            .gap_2()
+            .child(reply_flow_button)
+            .child(auto_post_button)
+            .child(start_all_button)
+            .child(stop_all_button)
+            .child(reply_list_button)
+            .child(post_history_button)
+            .child(task_settings_button)
+            .into_any_element();
+        app_log::info!("X 辅助诊断：菜单容器组装完成");
+        menu
     }
 }
 
