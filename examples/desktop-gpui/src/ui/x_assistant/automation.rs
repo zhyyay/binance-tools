@@ -9,7 +9,7 @@ pub(super) fn log_event(message: &str) {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let timestamp = app_log::beijing_now().format("%Y-%m-%d %H:%M:%S%.3f");
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "[{timestamp}] {message}");
     }
