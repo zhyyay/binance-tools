@@ -481,7 +481,7 @@ impl EntertainmentNewsPage {
         // 新鲜度加权：24 小时内优先，避免旧新闻因关键词多而长期置顶。
         let timestamp = item.published_at.as_deref().unwrap_or(&item.collected_at);
         if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp) {
-            let age_hours = (chrono::Utc::now() - parsed.with_timezone(&chrono::Utc))
+            let age_hours = (app_log::beijing_now() - parsed.with_timezone(&app_log::beijing_timezone()))
                 .num_hours()
                 .max(0);
             score += match age_hours {
