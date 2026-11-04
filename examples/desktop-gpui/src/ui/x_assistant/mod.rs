@@ -63,6 +63,7 @@ pub struct XAssistantPage {
     reply_list: Option<Entity<reply_list::ReplyListPage>>,
     post_history: Option<Entity<post_history::PostHistoryPage>>,
     task_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
+    render_diagnostic_logged: bool,
 }
 
 impl Drop for XAssistantPage {
@@ -113,6 +114,7 @@ impl XAssistantPage {
             reply_list: None,
             post_history: None,
             task_settings,
+            render_diagnostic_logged: false,
         }
     }
 
@@ -643,7 +645,10 @@ impl XAssistantPage {
 
 impl Render for XAssistantPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        app_log::info!("X 辅助诊断：开始渲染页面");
+        if !self.render_diagnostic_logged {
+            app_log::info!("X 辅助诊断：开始渲染页面");
+            self.render_diagnostic_logged = true;
+        }
         if self.show_task_settings {
             let menu = self.render_page_menu(cx);
             let task_settings = self.render_task_settings(cx);
