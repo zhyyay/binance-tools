@@ -79,15 +79,12 @@ pub fn submit_prepared_post(
 
     let operation = (|| -> anyhow::Result<SubmitResult> {
         check_cancel(cancel)?;
-        // 浏览器未启动时自动打开 X；随后必须确认浏览器窗口已就绪。
-        if automation::native::activate_browser().is_err() {
-            super::super::option::open_chrome()
-                .context("未检测到可用浏览器，自动启动 Chrome 失败")?;
-            wait_or_cancel(cancel, Duration::from_secs(5))?;
-            automation::native::activate_browser()
-                .context("Chrome 已启动，但未能切换到浏览器窗口")?;
-        }
-        automation::native::navigate_to_x_compose()?;
+        // 直接让 Chrome 打开 X 发帖地址，不再模拟地址栏输入，避免网址漏字或截断。
+        super::super::option::open_chrome()
+            .context("启动 Chrome 并直接打开 X 发帖页面失败")?;
+        wait_or_cancel(cancel, Duration::from_secs(5))?;
+        automation::native::activate_browser()
+            .context("X 发帖页面已请求打开，但未能切换到浏览器窗口")?;
         wait_or_cancel(cancel, Duration::from_secs(4))?;
 
         // 地址栏截图用于确认导航目标；客户区截图用于获得可直接点击的坐标。
