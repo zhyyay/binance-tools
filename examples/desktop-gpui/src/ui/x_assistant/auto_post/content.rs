@@ -15,7 +15,6 @@ use binance_tools::{
 };
 
 const MAX_POST_CHARS: usize = 100;
-const MAX_POST_WITH_URL_CHARS: usize = 280;
 const NEWS_SCAN_LIMIT: i64 = 100;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,7 +64,7 @@ impl NewsKind {
 
     fn system_prompt(self) -> &'static str {
         match self {
-            Self::Crypto => "你是一名专业的中文加密行业 X 博主。把新闻写成自然、有信息量、适合 X 的短帖。只保留原文明确支持的事实、人物、项目、时间和数字；传闻必须保留传闻属性；不得投资建议、夸大或编造。开头直接呈现最重要的信息，避免新闻通稿腔、空话、标题党、强行互动和重复句式。严格控制在 100 个 Unicode 字符以内。只输出正文，不要标题、解释或引号。",
+            Self::Crypto => "你是一名专业的中文加密行业 X 博主。把新闻写成自然、有信息量、适合 X 的短帖。只保留原文明确支持的事实、人物、项目、时间和数字；传闻必须保留传闻属性；不得投资建议、夸大或编造。开头直接呈现最重要的信息，避免新闻通稿腔、空话、标题党、强行互动和重复句式。严格控制在 100 个 Unicode 字符以内。只输出正文，不要标题、解释、引号或任何网址、链接地址。",
             Self::Entertainment => "你是一名熟悉中文社交平台表达的娱乐资讯编辑。把娱乐新闻写成自然、轻松、清楚的中文 X 短帖。准确保留人物、事件和原文细节；传闻必须明确标注为传闻，不得造谣、影射或补充未经证实的信息。避免攻击、羞辱、标题党、营销腔、空话和强行互动。严格控制在 100 个 Unicode 字符以内。只输出正文，不要标题、解释或引号。",
         }
     }
@@ -215,8 +214,55 @@ fn load_candidates(filter: NewsFilter) -> anyhow::Result<Vec<NewsCandidate>> {
     Ok(candidates)
 }
 
+/// 清理新闻材料和 AI 输出中的 URL，包括 http(s)://、www. 和常见裸域名。
+fn strip_urls(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut index = 0;
+
+    while index < value.len() {
+        let rest = &value[index..];
+        let lower = rest.to_ascii_lowercase();
+        if lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("www.") {
+            while index < value.len() {
+                let ch = value[index..].chars().next().expect("valid UTF-8 boundary");
+                if ch.is_whitespace()
+                    || matches!(ch, '，' | '。' | '；' | '、' | '！' | '？' | '）' | '】' | '>' | '"' | '\'')
+                {
+                    break;
+                }
+                index += ch.len_utf8();
+            }
+            continue;
+        }
+
+        let ch = rest.chars().next().expect("valid UTF-8 boundary");
+        if ch.is_ascii_alphanumeric() {
+            let token_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            let token = &rest[..token_end];
+            let host = token.trim_matches(|c: char| {
+                matches!(c, '(' | '[' | '{' | '"' | '\'' | '，' | '。' | '；' | '、' | '！' | '？' | ')' | ']' | '}')
+            });
+            let domain = host.split('/').next().unwrap_or_default();
+            let looks_like_domain = domain.rsplit_once('.').is_some_and(|(name, suffix)| {
+                !name.is_empty()
+                    && suffix.len() >= 2
+                    && suffix.chars().all(|c| c.is_ascii_alphabetic())
+            });
+            if looks_like_domain {
+                index += token_end;
+                continue;
+            }
+        }
+
+        output.push(ch);
+        index += ch.len_utf8();
+    }
+
+    output.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn clean_ai_text(value: &str) -> String {
-    value
+    strip_urls(value)
         .trim()
         .trim_matches('"')
         .trim_matches('“')
@@ -224,24 +270,24 @@ fn clean_ai_text(value: &str) -> String {
         .trim()
         .to_string()
 }
-
 fn generate_post(candidate: &NewsCandidate) -> anyhow::Result<String> {
     app_log::info!("X 自动发帖内容准备：开始调用 AI 改写新闻，类型={:?}，标题={}", candidate.kind, candidate.title);
     let settings = AiSettings::load_default().context("加载 AI 配置失败")?;
     ensure!(settings.agent.enabled, "AI agent 未启用，不能生成自动发帖内容");
     let selection = settings.selected_model().clone();
 
+    let source_title = strip_urls(&candidate.title);
     let source_body = if candidate.body.trim().is_empty() {
-        candidate.title.as_str()
+        source_title.clone()
     } else {
-        candidate.body.as_str()
+        strip_urls(&candidate.body)
     };
     let messages = [
         ChatMessage::system(candidate.kind.system_prompt()),
         ChatMessage::user(format!(
-            "请将以下{}新闻改写成一条中文 X 短帖。不得添加来源材料之外的信息。\n\n标题：{}\n内容：{}",
+            "请将以下{}新闻改写成一条中文 X 短帖。不得添加来源材料之外的信息。正文严禁出现网址、域名、URL 或任何链接地址。\n\n标题：{}\n内容：{}",
             candidate.kind.label(),
-            candidate.title,
+            source_title,
             source_body
         )),
     ];
@@ -306,18 +352,11 @@ pub fn prepare_next_post_blocking(filter: NewsFilter) -> anyhow::Result<Option<P
         }
 
         app_log::info!("X 自动发帖内容准备：选中候选新闻，news_id={}", news_id);
-        let mut content = generate_post(&candidate)?;
-        if let Some(url) = candidate.url.as_deref().map(str::trim).filter(|url| {
-            url.starts_with("https://") || url.starts_with("http://")
-        }) {
-            if !content.contains(url) {
-                content.push_str(" · ");
-                content.push_str(url);
-            }
-        }
+        // 最终入库前再次清理，防止 AI 输出或压缩重试结果夹带链接。
+        let content = strip_urls(&generate_post(&candidate)?);
         ensure!(
-            content.chars().count() <= MAX_POST_WITH_URL_CHARS,
-            "加入来源链接后的正文过长，已阻止发布"
+            !content.is_empty() && content.chars().count() <= MAX_POST_CHARS,
+            "清理链接后 AI 文案为空或超过 100 字，已阻止发布"
         );
 
         let content_hash = content_fingerprint(&content);
