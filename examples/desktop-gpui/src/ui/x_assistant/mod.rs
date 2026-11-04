@@ -147,6 +147,9 @@ impl XAssistantPage {
         cx.notify();
 
         let cancel = Arc::clone(&self.cancel_reply);
+        let news_filter = auto_post::content::NewsFilter::from_setting(
+            &self.task_settings.auto_post_news_type,
+        );
         let reply_options = if self.task_settings.auto_reply_enabled && self.auto_send {
             Some(vision::VisionReplyOptions {
                 api_url: vision::DEFAULT_OLLAMA_URL.to_string(),
@@ -163,9 +166,9 @@ impl XAssistantPage {
             let result = cx
                 .background_spawn(async move {
                     if let Some(options) = reply_options {
-                        auto_post::executor::run_with_auto_reply(Arc::clone(&cancel), options)
+                        auto_post::executor::run_with_auto_reply(Arc::clone(&cancel), options, news_filter)
                     } else {
-                        auto_post::executor::run_loop(&cancel)
+                        auto_post::executor::run_loop(&cancel, news_filter)
                     }
                 })
                 .await;
@@ -179,6 +182,64 @@ impl XAssistantPage {
                     Err(error) => {
                         this.status = None;
                         this.error = Some(format!("自动发帖停止：{error:#}"));
+                    }
+                }
+                cx.notify();
+            });
+        });
+    }
+
+    fn set_auto_post_news_type(&mut self, news_type: &str, cx: &mut Context<Self>) {
+        self.task_settings.auto_post_news_type = match news_type {
+            "crypto" => "crypto".to_string(),
+            "entertainment" => "entertainment".to_string(),
+            _ => "all".to_string(),
+        };
+        self.persist_task_settings(cx);
+    }
+
+    fn start_test_auto_post(&mut self, cx: &mut Context<Self>) {
+        if self.replying {
+            return;
+        }
+        self.replying = true;
+        self.error = None;
+        self.cancel_reply.store(false, Ordering::Release);
+        self.status = Some(
+            "测试发帖已启动：只选取一条所选类型新闻，完成真实发布与结果核验；不会启动连续发布。".to_string(),
+        );
+        cx.notify();
+
+        let cancel = Arc::clone(&self.cancel_reply);
+        let filter = auto_post::content::NewsFilter::from_setting(
+            &self.task_settings.auto_post_news_type,
+        );
+        self._reply_task = cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_spawn(async move {
+                    auto_post::executor::run_test_once(&cancel, filter)
+                })
+                .await;
+            _ = this.update(cx, |this, cx| {
+                this.replying = false;
+                match result {
+                    Ok(result) if result.outcome == auto_post::submit::SubmitOutcome::Published => {
+                        this.error = None;
+                        this.status = Some(format!(
+                            "测试发帖成功：post_id={}。已完成提交和页面结果核验。",
+                            result.post_id
+                        ));
+                    }
+                    Ok(result) => {
+                        this.status = None;
+                        this.error = Some(format!(
+                            "测试发帖结果不确定：post_id={}。请先人工检查 X 页面，禁止直接重试。{}",
+                            result.post_id, result.message
+                        ));
+                    }
+                    Err(error) => {
+                        this.status = None;
+                        this.error = Some(format!("测试发帖失败：{error:#}"));
                     }
                 }
                 cx.notify();
@@ -399,7 +460,7 @@ impl XAssistantPage {
                 div()
                     .text_size(px(11.))
                     .text_color(palette::muted(theme))
-                    .child("设置会保存到本地数据库。当前分支先完成配置、发布历史和断点数据层；浏览器发帖执行器接入前，自动发帖开关不会单独启动浏览器任务。"),
+                    .child("设置会保存到本地数据库。自动发帖按工作区选择的新闻类型筛选候选，并遵守每小时发布上限。"),
             )
             .into_any_element()
     }
@@ -617,11 +678,51 @@ impl Render for XAssistantPage {
                         .bg(palette::surface(theme))
                         .p_4()
                         .child(div().text_size(px(20.)).font_semibold().child("自动发帖"))
-                        .child(div().text_size(px(12.)).text_color(palette::muted(theme)).child("独立的自动发帖工作区。任务开关在「任务设置」中管理，实际执行从本页面启动。"))
+                        .child(div().text_size(px(12.)).text_color(palette::muted(theme)).child("先选择新闻类型，再测试单条真实发帖或启动持续自动发布。"))
+                        .child(div().text_size(px(13.)).font_semibold().child("新闻类型"))
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .flex_wrap()
+                                .child(
+                                    Button::new("x-auto-post-type-all")
+                                        .small()
+                                        .label("全部新闻")
+                                        .when(self.task_settings.auto_post_news_type == "all", |button| button.primary())
+                                        .when(self.task_settings.auto_post_news_type != "all", |button| button.outline())
+                                        .disabled(self.replying)
+                                        .on_click(cx.listener(|this, _, _, cx| this.set_auto_post_news_type("all", cx))),
+                                )
+                                .child(
+                                    Button::new("x-auto-post-type-crypto")
+                                        .small()
+                                        .label("币圈新闻")
+                                        .when(self.task_settings.auto_post_news_type == "crypto", |button| button.primary())
+                                        .when(self.task_settings.auto_post_news_type != "crypto", |button| button.outline())
+                                        .disabled(self.replying)
+                                        .on_click(cx.listener(|this, _, _, cx| this.set_auto_post_news_type("crypto", cx))),
+                                )
+                                .child(
+                                    Button::new("x-auto-post-type-entertainment")
+                                        .small()
+                                        .label("娱乐新闻")
+                                        .when(self.task_settings.auto_post_news_type == "entertainment", |button| button.primary())
+                                        .when(self.task_settings.auto_post_news_type != "entertainment", |button| button.outline())
+                                        .disabled(self.replying)
+                                        .on_click(cx.listener(|this, _, _, cx| this.set_auto_post_news_type("entertainment", cx))),
+                                ),
+                        )
                         .child(
                             h_flex()
                                 .gap_2()
                                 .items_center()
+                                .child(
+                                    Button::new("x-auto-post-test")
+                                        .label("测试发帖（真实发布 1 条）")
+                                        .outline()
+                                        .disabled(self.replying)
+                                        .on_click(cx.listener(|this, _, _, cx| this.start_test_auto_post(cx))),
+                                )
                                 .child(
                                     Button::new("x-auto-post-start")
                                         .label(if self.replying { "自动发帖运行中…" } else { "启动自动发帖" })
@@ -646,11 +747,12 @@ impl Render for XAssistantPage {
                                 .p_3()
                                 .text_size(px(12.))
                                 .text_color(palette::muted(theme))
-                                .child(if self.task_settings.auto_post_enabled {
-                                    "自动发帖已启用。请先打开并登录 X 网页；程序会按每小时上限执行，结果不明确时暂停并要求人工核验。"
+                                 .child(if self.task_settings.auto_post_enabled {
+                                    "自动发帖已启用。正式启动会按所选新闻类型持续筛选并发布，受每小时上限控制。"
                                 } else {
-                                    "请先在「任务设置」中开启自动发帖。启动后会读取币圈与娱乐新闻并按设定频率发布。"
-                                }),
+                                    "测试按钮会真实发布一条帖子；正式连续发布前，请先在「任务设置」中开启自动发帖。"
+                                })
+                                .child("测试发帖同样计入每小时发布上限。若提交后结果不明确，会暂停并要求人工核验，不会自动重发。"),
                         ),
                 )
                 .into_any_element();
