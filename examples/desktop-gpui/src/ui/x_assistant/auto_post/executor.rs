@@ -20,6 +20,91 @@ use super::{
 };
 use crate::ui::x_assistant::core::{scheduler::next_post_delay, task_queue::run_browser_task};
 
+/// 发帖前同步所选类别的 RSS 新闻；所有订阅源都失败时阻止本次发帖。
+fn sync_latest_news(filter: NewsFilter) -> anyhow::Result<(usize, usize)> {
+    use crypto_rss::{Collector, FeedConfig};
+
+    let mut feeds = Vec::new();
+    if matches!(filter, NewsFilter::Crypto | NewsFilter::All) {
+        feeds.extend([
+            FeedConfig { name: "Odaily 快讯".into(), url: "https://rss.odaily.news/rss/newsflash".into() },
+            FeedConfig { name: "BlockBeats 快讯".into(), url: "https://api.theblockbeats.news/v2/rss/newsflash".into() },
+            FeedConfig { name: "ChainCatcher 快讯".into(), url: "https://www.chaincatcher.com/rss/clist".into() },
+            FeedConfig { name: "PANews".into(), url: "https://rss.panewslab.com/zh/tvsq/rss".into() },
+        ]);
+    }
+    if matches!(filter, NewsFilter::Entertainment | NewsFilter::All) {
+        feeds.extend([
+            FeedConfig { name: "新浪娱乐要闻".into(), url: "https://rss.sina.com.cn/ent/hot_roll.xml".into() },
+            FeedConfig { name: "新浪明星全接触".into(), url: "https://rss.sina.com.cn/ent/star/focus7.xml".into() },
+            FeedConfig { name: "热摸爽综合热点".into(), url: "https://remoshuang.com/feed.xml".into() },
+            FeedConfig { name: "新浪内地明星".into(), url: "https://rss.sina.com.cn/ent/inner.xml".into() },
+            FeedConfig { name: "中国新闻网文娱".into(), url: "https://www.chinanews.com.cn/rss/culture.xml".into() },
+        ]);
+    }
+
+    app_log::info!("X 自动发帖：开始同步最新 RSS，订阅源数量={}", feeds.len());
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let (items, reports) = runtime.block_on(async {
+        let collector = Collector::new()?;
+        Ok::<_, anyhow::Error>(collector.collect_all(&feeds).await)
+    })?;
+
+    let successful_feeds = reports.iter().filter(|report| report.error.is_none()).count();
+    let failed_feeds = reports.len().saturating_sub(successful_feeds);
+    for report in &reports {
+        match &report.error {
+            Some(error) => app_log::warn!("RSS 同步失败：{}：{}", report.source, error),
+            None => app_log::info!("RSS 同步完成：{}，获取 {} 条", report.source, report.fetched),
+        }
+    }
+    anyhow::ensure!(
+        successful_feeds > 0,
+        "RSS 同步失败：所选新闻类别的所有订阅源均不可用，已停止发帖，不使用数据库旧新闻"
+    );
+
+    let mut crypto_items = Vec::new();
+    let mut entertainment_items = Vec::new();
+    for item in items {
+        let is_entertainment = item.source.contains("新浪")
+            || item.source.contains("中国新闻网")
+            || item.source.contains("热摸爽");
+        if is_entertainment {
+            entertainment_items.push(binance_tools::db::entertainment_news::NewsItemEntity {
+                source: item.source,
+                title: item.title,
+                url: item.url,
+                summary: item.summary,
+                published_at: item.published_at.map(|value| value.to_rfc3339()),
+                collected_at: item.collected_at.to_rfc3339(),
+            });
+        } else {
+            crypto_items.push(binance_tools::db::crypto_news::NewsItemEntity {
+                source: item.source,
+                title: item.title,
+                url: item.url,
+                summary: item.summary,
+                published_at: item.published_at.map(|value| value.to_rfc3339()),
+                collected_at: item.collected_at.to_rfc3339(),
+            });
+        }
+    }
+
+    let connection = binance_tools::db::open_default_connection()?;
+    let mut inserted = 0usize;
+    if !crypto_items.is_empty() {
+        inserted += binance_tools::db::crypto_news::insert_news_items(&connection, &crypto_items)?;
+    }
+    if !entertainment_items.is_empty() {
+        inserted += binance_tools::db::entertainment_news::insert_news_items(&connection, &entertainment_items)?;
+    }
+    app_log::info!(
+        "X 自动发帖：RSS 同步结束，成功订阅源={}，失败订阅源={}，新增新闻={} 条",
+        successful_feeds, failed_feeds, inserted
+    );
+    Ok((inserted, failed_feeds))
+}
+
 fn wait_or_cancel(cancel: &AtomicBool, duration: Duration) -> anyhow::Result<()> {
     let mut remaining = duration;
     while !remaining.is_zero() {
@@ -54,7 +139,13 @@ fn run_once_with_mode(
         hourly_count < u64::from(settings.posts_per_hour.clamp(1, 10)),
         "已达到每小时发布上限，暂不能执行发帖（测试发帖同样计入限额）"
     );
-    app_log::info!("X 自动发帖执行器：开始读取新闻候选并生成文案；此阶段尚不会打开浏览器");
+    app_log::info!("X 自动发帖执行器：发帖前先同步最新 RSS 新闻");
+    let (inserted_news, failed_feeds) = sync_latest_news(filter)?;
+    app_log::info!(
+        "X 自动发帖执行器：RSS 同步完成，新增 {} 条，失败订阅源 {} 个；开始筛选最近 24 小时新闻",
+        inserted_news, failed_feeds
+    );
+    ensure!(!cancel.load(Ordering::Acquire), "RSS 同步后收到停止指令");
     let Some(post) = prepare_next_post_blocking(filter)? else {
         app_log::warn!("X 自动发帖执行器：没有可用于测试的未发布新闻候选，浏览器不会启动");
         return Ok(None);
