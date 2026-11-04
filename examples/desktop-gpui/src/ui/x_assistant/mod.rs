@@ -573,6 +573,8 @@ fn load_reply_rules() -> String {
 
 impl XAssistantPage {
     fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：已经进入 render_page_menu 函数");
+        app_log::info!("X 辅助诊断：准备创建第一个 Button");
         app_log::info!("X 辅助诊断：菜单按钮 1/7 自动回复：开始构建");
         let reply_flow_button = Button::new("x-assistant-reply-flow-tab")
             .label("自动回复")
