@@ -74,17 +74,22 @@ impl Drop for XAssistantPage {
 
 impl XAssistantPage {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        app_log::info!("X 辅助诊断：构造函数进入");
         let rules_value = load_reply_rules();
+        app_log::info!("X 辅助诊断：回复规则读取完成");
         let reply_rules = cx.new(|cx| {
             InputState::new(window, cx)
                 .auto_grow(3, 8)
                 .placeholder("输入回复规则，例如：简短、自然地回应帖子，不要照抄正文。")
                 .default_value(rules_value)
         });
+        app_log::info!("X 辅助诊断：回复规则输入框创建完成");
         let reply_rules_subscription =
             cx.subscribe_in(&reply_rules, window, Self::on_reply_rules_input);
+        app_log::info!("X 辅助诊断：输入框事件订阅完成");
         let task_settings = binance_tools::db::x_posting::load_task_settings_blocking()
             .unwrap_or_default();
+        app_log::info!("X 辅助诊断：任务设置读取完成");
 
         Self {
             replying: false,
@@ -638,6 +643,7 @@ impl XAssistantPage {
 
 impl Render for XAssistantPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        app_log::info!("X 辅助诊断：开始渲染页面");
         if self.show_task_settings {
             let menu = self.render_page_menu(cx);
             let task_settings = self.render_task_settings(cx);
