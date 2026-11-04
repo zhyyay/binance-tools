@@ -2413,7 +2413,7 @@ fn format_time(timestamp_ms: i64) -> String {
 fn kline_tick_label(timestamp_ms: i64, interval: &str) -> String {
     DateTime::from_timestamp_millis(timestamp_ms)
         .map(|time| {
-            let time = time.with_timezone(&Local);
+            let time = time.with_timezone(&app_log::beijing_timezone());
             if is_intraday_interval(interval) {
                 time.format("%m/%d %H:%M").to_string()
             } else {
