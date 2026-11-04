@@ -9,7 +9,7 @@ pub fn open_chrome() -> Result<()> {
             "",
             "chrome",
             "--new-window",
-            "https://x.com/home",
+            "https://x.com/compose/post",
         ])
         .spawn()
         .context("启动 Chrome 失败")?;
