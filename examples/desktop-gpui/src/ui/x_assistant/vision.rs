@@ -179,7 +179,7 @@ fn refresh_timeline(cancel: &AtomicBool) -> anyhow::Result<()> {
         .join("x_assistant")
         .join("screenshots");
     fs::create_dir_all(&dir)?;
-    let id = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f");
+    let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
     let mut screenshots = Vec::new();
     let check_shot = capture_desktop(&dir, &id, "feed-refresh-check", &mut screenshots)?;
     check_cancel(cancel)?;
@@ -264,7 +264,7 @@ pub(super) fn randomized_recovery(cancel: &AtomicBool, reason: &str) -> anyhow::
             .join("x_assistant")
             .join("screenshots");
         fs::create_dir_all(&dir)?;
-        let id = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f");
+        let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
         let mut screenshots = Vec::new();
         let check_shot =
             capture_desktop(&dir, &id, "full-auto-error-state-check", &mut screenshots)?;
@@ -381,7 +381,7 @@ pub(super) fn randomized_recovery(cancel: &AtomicBool, reason: &str) -> anyhow::
             .join("x_assistant")
             .join("screenshots");
         fs::create_dir_all(&dir)?;
-        let id = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f");
+        let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
         let mut screenshots = Vec::new();
         let check_shot = capture_desktop(&dir, &id, "full-auto-refresh-check", &mut screenshots)?;
         check_cancel(cancel)?;
@@ -524,7 +524,7 @@ fn run_visual_reply_inner(
         .join("x_assistant")
         .join("screenshots");
     fs::create_dir_all(&dir)?;
-    let id = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f");
+    let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
     let mut screenshots = Vec::new();
     let run_id = id.to_string();
 
@@ -2327,7 +2327,7 @@ fn log_vision_time(shot: &Shot, elapsed: Duration, ok: bool) {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let timestamp = app_log::beijing_now().format("%Y-%m-%d %H:%M:%S%.3f");
     let line = format!(
         "[{timestamp}] [{}] 识图 {} ms {} {}",
         phase_label(&shot.stage),
