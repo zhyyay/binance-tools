@@ -808,7 +808,16 @@ impl Render for XAssistantPage {
                 .into_any_element();
         }
         app_log::info!("X 辅助诊断：开始构建主页面菜单");
+        app_log::info!(
+            "X 辅助诊断：主页面状态，task_settings={}，auto_post={}，reply_list={}，post_history={}",
+            self.show_task_settings,
+            self.show_auto_post,
+            self.show_reply_list,
+            self.show_post_history
+        );
+        app_log::info!("X 辅助诊断：即将调用 render_page_menu");
         let menu = self.render_page_menu(cx);
+        app_log::info!("X 辅助诊断：render_page_menu 已返回");
         app_log::info!("X 辅助诊断：主页面菜单构建完成");
         let theme = cx.theme();
         app_log::info!("X 辅助诊断：主题读取完成");
