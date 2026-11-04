@@ -572,11 +572,10 @@ fn load_reply_rules() -> String {
 }
 
 impl XAssistantPage {
-    fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：已经进入 render_page_menu 函数");
-        app_log::info!("X 辅助诊断：准备创建第一个 Button");
-        app_log::info!("X 辅助诊断：菜单按钮 1/7 自动回复：开始构建");
-        let reply_flow_button = Button::new("x-assistant-reply-flow-tab")
+    // 将每个按钮拆分到独立函数，避免在 GPUI render 回调中创建一个过大的临时栈帧。
+    fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：开始构建自动回复按钮");
+        let button = Button::new("x-assistant-reply-flow-tab")
             .label("自动回复")
             .when(
                 !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post,
@@ -587,63 +586,101 @@ impl XAssistantPage {
                 |button| button.outline(),
             )
             .small()
-            .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx)));
-        app_log::info!("X 辅助诊断：菜单按钮 1/7 自动回复：构建完成");
+            .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx)))
+            .into_any_element();
+        app_log::info!("X 辅助诊断：自动回复按钮构建完成");
+        button
+    }
 
-        app_log::info!("X 辅助诊断：菜单按钮 2/7 自动发帖：开始构建");
-        let auto_post_button = Button::new("x-assistant-auto-post-tab")
+    fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：开始构建自动发帖按钮");
+        let button = Button::new("x-assistant-auto-post-tab")
             .label("自动发帖")
             .when(self.show_auto_post, |button| button.primary())
             .when(!self.show_auto_post, |button| button.outline())
             .small()
-            .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx)));
-        app_log::info!("X 辅助诊断：菜单按钮 2/7 自动发帖：构建完成");
+            .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx)))
+            .into_any_element();
+        app_log::info!("X 辅助诊断：自动发帖按钮构建完成");
+        button
+    }
 
-        app_log::info!("X 辅助诊断：菜单按钮 3/7 开始自动化：开始构建");
-        let start_all_button = Button::new("x-assistant-start-all-automation")
+    fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：开始构建开始自动化按钮");
+        let button = Button::new("x-assistant-start-all-automation")
             .label(if self.replying { "自动化运行中…" } else { "开始自动化" })
             .when(!self.replying, |button| button.primary())
             .when(self.replying, |button| button.outline())
             .small()
             .disabled(self.replying)
-            .on_click(cx.listener(|this, _, _, cx| this.start_all_automation(cx)));
-        app_log::info!("X 辅助诊断：菜单按钮 3/7 开始自动化：构建完成");
+            .on_click(cx.listener(|this, _, _, cx| this.start_all_automation(cx)))
+            .into_any_element();
+        app_log::info!("X 辅助诊断：开始自动化按钮构建完成");
+        button
+    }
 
-        app_log::info!("X 辅助诊断：菜单按钮 4/7 停止自动化：开始构建");
-        let stop_all_button = Button::new("x-assistant-stop-all-automation")
+    fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：开始构建停止自动化按钮");
+        let button = Button::new("x-assistant-stop-all-automation")
             .label("停止自动化")
             .outline()
             .small()
             .disabled(!self.replying)
-            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)));
-        app_log::info!("X 辅助诊断：菜单按钮 4/7 停止自动化：构建完成");
+            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
+            .into_any_element();
+        app_log::info!("X 辅助诊断：停止自动化按钮构建完成");
+        button
+    }
 
-        app_log::info!("X 辅助诊断：菜单按钮 5/7 回复列表：开始构建");
-        let reply_list_button = Button::new("x-assistant-reply-list-tab")
+    fn render_reply_list_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：开始构建回复列表按钮");
+        let button = Button::new("x-assistant-reply-list-tab")
             .label("回复列表")
             .when(self.show_reply_list, |button| button.primary())
             .when(!self.show_reply_list, |button| button.outline())
             .small()
-            .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx)));
-        app_log::info!("X 辅助诊断：菜单按钮 5/7 回复列表：构建完成");
+            .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx)))
+            .into_any_element();
+        app_log::info!("X 辅助诊断：回复列表按钮构建完成");
+        button
+    }
 
-        app_log::info!("X 辅助诊断：菜单按钮 6/7 发帖历史：开始构建");
-        let post_history_button = Button::new("x-assistant-post-history-tab")
+    fn render_post_history_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：开始构建发帖历史按钮");
+        let button = Button::new("x-assistant-post-history-tab")
             .label("发帖历史")
             .when(self.show_post_history, |button| button.primary())
             .when(!self.show_post_history, |button| button.outline())
             .small()
-            .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx)));
-        app_log::info!("X 辅助诊断：菜单按钮 6/7 发帖历史：构建完成");
+            .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx)))
+            .into_any_element();
+        app_log::info!("X 辅助诊断：发帖历史按钮构建完成");
+        button
+    }
 
-        app_log::info!("X 辅助诊断：菜单按钮 7/7 任务设置：开始构建");
-        let task_settings_button = Button::new("x-assistant-task-settings-tab")
+    fn render_task_settings_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：开始构建任务设置按钮");
+        let button = Button::new("x-assistant-task-settings-tab")
             .label("任务设置")
             .when(self.show_task_settings, |button| button.primary())
             .when(!self.show_task_settings, |button| button.outline())
             .small()
-            .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx)));
-        app_log::info!("X 辅助诊断：菜单按钮 7/7 任务设置：构建完成");
+            .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx)))
+            .into_any_element();
+        app_log::info!("X 辅助诊断：任务设置按钮构建完成");
+        button
+    }
+
+    fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：已经进入 render_page_menu 函数");
+
+        let reply_flow_button = self.render_reply_flow_button(cx);
+        let auto_post_button = self.render_auto_post_button(cx);
+        let start_all_button = self.render_start_all_button(cx);
+        let stop_all_button = self.render_stop_all_button(cx);
+        let reply_list_button = self.render_reply_list_button(cx);
+        let post_history_button = self.render_post_history_button(cx);
+        let task_settings_button = self.render_task_settings_button(cx);
 
         app_log::info!("X 辅助诊断：开始组装菜单容器");
         let menu = h_flex()
