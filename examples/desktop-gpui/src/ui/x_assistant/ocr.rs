@@ -136,24 +136,28 @@ pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow
     Ok(score >= 0.75)
 }
 
-/// 点击提交后只做一次页面核验。无法在页面上找到正文或成功提示时返回 false，
-/// 调用方必须把记录置为 unknown，绝不能自动重发。
-pub(super) fn verify_post_published(path: &Path, content: &str) -> anyhow::Result<bool> {
-    let doc = recognize_document(path)?;
-    let text = normalize_text(&doc.text).to_lowercase();
-    let confirmations = [
-        normalize_text("Your post was sent").to_lowercase(),
-        normalize_text("Post sent").to_lowercase(),
-        normalize_text("已发送"),
-        normalize_text("你的帖子已发送"),
-        normalize_text("帖子已发布"),
-    ];
-    if confirmations.iter().any(|phrase| text.contains(phrase)) {
-        return Ok(true);
-    }
-    let expected = normalize_text(content.split(" · ").next().unwrap_or(content)).to_lowercase();
-    let expected = expected.chars().take(32).collect::<String>();
-    Ok(expected.chars().count() >= 8 && text_match_ratio(&text, &expected) >= 0.78)
+/// 只识别浏览器页面底部的 X 发布成功 toast，避免把正文中相似文字误判为成功。
+/// X 中文界面成功提示为“你的贴已发送。查看”；同时兼容“你的帖子已发送”等变体。
+pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
+    use image::imageops::crop_imm;
+
+    let source = image::open(path)?;
+    let width = source.width();
+    let height = source.height();
+    anyhow::ensure!(width >= 800 && height >= 600, "发布结果截图尺寸异常（{width}x{height}）");
+
+    // toast 位于浏览器客户区底部，裁剪最后 30% 区域，避免对整页重复 OCR。
+    let top = height * 70 / 100;
+    let crop = crop_imm(&source, 0, top, width, height - top).to_image();
+    let crop = image::DynamicImage::ImageRgba8(crop);
+    let doc = recognize_document_image(&crop, 4, 3, Some(200))?;
+    let recognized = doc.text.trim();
+    let matched = contains_sent_confirmation(recognized);
+    super::automation::log_event(&format!(
+        "[自动发帖 OCR] 底部发布提示识别：匹配={}，识别文本={:?}",
+        matched, recognized
+    ));
+    Ok(matched)
 }
 
 fn doc_width(path: &Path) -> anyhow::Result<u32> {
