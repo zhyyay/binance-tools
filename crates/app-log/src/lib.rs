@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{DateTime, FixedOffset, Utc};
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
@@ -8,6 +8,16 @@ use std::{
 
 static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+/// 北京时间固定时区（UTC+8），不依赖运行设备的系统时区。
+pub fn beijing_timezone() -> FixedOffset {
+    FixedOffset::east_opt(8 * 60 * 60).expect("UTC+8 is a valid fixed offset")
+}
+
+/// 获取当前北京时间。
+pub fn beijing_now() -> DateTime<FixedOffset> {
+    Utc::now().with_timezone(&beijing_timezone())
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Level {
@@ -75,8 +85,8 @@ pub fn write_to(
 
     let path = directory.join(file_name);
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-    writeln!(file, "[{timestamp}] [{}] {}", level.as_str(), message.as_ref())?;
+    let timestamp = beijing_now().format("%Y-%m-%d %H:%M:%S%.3f");
+    writeln!(file, "[{timestamp} +08:00] [{}] {}", level.as_str(), message.as_ref())?;
     file.flush()
 }
 
