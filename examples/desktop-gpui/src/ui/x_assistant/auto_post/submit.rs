@@ -232,25 +232,74 @@ pub fn submit_prepared_post(
         automation::log_event("[自动发帖][步骤 8/8] 准备点击弹窗发帖按钮");
         click_attempted = true;
         automation::native::click_at_client_position(submit_point.0, submit_point.1)?;
-        automation::log_event("[自动发帖] 发帖按钮点击动作已执行，等待页面反馈 3 秒");
+        automation::log_event("[自动发帖] 发帖按钮点击动作已执行，开始轮询页面底部的发布成功提示");
 
-        // 最终发布成功校验暂留待补充；先保存提交后的完整页面截图。
-        wait_or_cancel(cancel, Duration::from_secs(3))?;
-        let result_page = capture_window(post.post_id, "after-submit-awaiting-confirmation")?;
-        let reason = format!(
-            "已点击发帖按钮，提交后页面截图已保存：{}。发布结果尚未执行最终校验，等待补充底部提示识别规则；禁止自动重发。",
-            result_page.display()
-        );
-        binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
-        automation::log_event(&format!(
-            "[自动发帖] 流程结束：记录 ID={} 状态=Unknown，等待补充发布成功提示校验；截图={}",
-            post.post_id, result_page.display()
-        ));
-        Ok(SubmitResult {
-            post_id: post.post_id,
-            outcome: SubmitOutcome::Unknown,
-            message: reason,
-        })
+        // X 的成功 toast 会短暂显示在页面底部。分次截图并只 OCR 底部区域；
+        // 只有识别到“你的贴已发送。查看”一类明确提示才标记 Published。
+        let mut last_result_page = None;
+        let mut published = false;
+        for attempt in 1..=5 {
+            wait_or_cancel(cancel, Duration::from_millis(if attempt == 1 { 1800 } else { 1200 }))?;
+            let result_page = capture_window(
+                post.post_id,
+                &format!("after-submit-toast-check-{attempt:02}"),
+            )?;
+            match ocr::recognize_post_sent_toast(&result_page) {
+                Ok(true) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 第 {attempt}/5 次识别到底部成功提示“你的贴已发送。查看”，确认发布成功"
+                    ));
+                    last_result_page = Some(result_page);
+                    published = true;
+                    break;
+                }
+                Ok(false) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 第 {attempt}/5 次未识别到底部成功提示，继续等待；不会自动重发"
+                    ));
+                }
+                Err(error) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 第 {attempt}/5 次底部提示 OCR 失败：{error:#}；继续检查，不会自动重发"
+                    ));
+                }
+            }
+            last_result_page = Some(result_page);
+        }
+
+        let result_page = last_result_page
+            .context("提交后未能保存任何结果截图；发布状态保持 Unknown")?;
+        if published {
+            binance_tools::db::x_posting::mark_post_published_blocking(post.post_id, None)?;
+            let message = format!(
+                "已识别 X 底部发布成功提示“你的贴已发送。查看”，确认发布成功。截图：{}",
+                result_page.display()
+            );
+            automation::log_event(&format!(
+                "[自动发帖] 流程结束：记录 ID={} 状态=Published；成功提示截图={}",
+                post.post_id, result_page.display()
+            ));
+            Ok(SubmitResult {
+                post_id: post.post_id,
+                outcome: SubmitOutcome::Published,
+                message,
+            })
+        } else {
+            let reason = format!(
+                "已点击发帖按钮，但连续 5 次检查均未识别到底部“你的贴已发送。查看”成功提示。最后截图：{}。发布结果不确定，禁止自动重发。",
+                result_page.display()
+            );
+            binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
+            automation::log_event(&format!(
+                "[自动发帖] 流程结束：记录 ID={} 状态=Unknown；未识别到底部成功提示；最后截图={}",
+                post.post_id, result_page.display()
+            ));
+            Ok(SubmitResult {
+                post_id: post.post_id,
+                outcome: SubmitOutcome::Unknown,
+                message: reason,
+            })
+        }
     })();
 
     match operation {
