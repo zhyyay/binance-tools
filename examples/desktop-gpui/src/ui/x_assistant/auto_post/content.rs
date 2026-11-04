@@ -158,6 +158,7 @@ fn hot_score(kind: NewsKind, title: &str, summary: &str, timestamp: &str) -> i64
 
 /// 复用新闻页面的币圈/娱乐关键词与新鲜度权重，跨来源统一按热点分排序。
 fn load_candidates(filter: NewsFilter) -> anyhow::Result<Vec<NewsCandidate>> {
+    app_log::info!("X 自动发帖内容准备：开始从 SQLite 读取新闻，filter={:?}", filter);
     let connection = open_default_connection()?;
     let mut candidates = Vec::new();
 
@@ -204,6 +205,7 @@ fn load_candidates(filter: NewsFilter) -> anyhow::Result<Vec<NewsCandidate>> {
         candidates.extend(source_candidates);
     }
 
+    app_log::info!("X 自动发帖内容准备：数据库读取到 {} 条候选新闻", candidates.len());
     candidates.sort_by(|left, right| {
         let left_time = left.published_at.as_deref().unwrap_or(&left.collected_at);
         let right_time = right.published_at.as_deref().unwrap_or(&right.collected_at);
@@ -224,6 +226,7 @@ fn clean_ai_text(value: &str) -> String {
 }
 
 fn generate_post(candidate: &NewsCandidate) -> anyhow::Result<String> {
+    app_log::info!("X 自动发帖内容准备：开始调用 AI 改写新闻，类型={:?}，标题={}", candidate.kind, candidate.title);
     let settings = AiSettings::load_default().context("加载 AI 配置失败")?;
     ensure!(settings.agent.enabled, "AI agent 未启用，不能生成自动发帖内容");
     let selection = settings.selected_model().clone();
@@ -278,11 +281,13 @@ fn generate_post(candidate: &NewsCandidate) -> anyhow::Result<String> {
         !content.contains("作为人工智能") && !content.contains("以下是改写"),
         "AI 返回了说明性文字，不是可发布正文"
     );
+    app_log::info!("X 自动发帖内容准备：AI 文案生成完成，字符数={}", content.chars().count());
     Ok(content)
 }
 
 /// 按所选新闻类型准备一条候选，先按热点分排序，再去重、AI 改写并持久化。
 pub fn prepare_next_post_blocking(filter: NewsFilter) -> anyhow::Result<Option<PreparedPost>> {
+    app_log::info!("X 自动发帖内容准备：进入候选准备流程");
     let candidates = load_candidates(filter)?;
 
     for candidate in candidates {
@@ -296,9 +301,11 @@ pub fn prepare_next_post_blocking(filter: NewsFilter) -> anyhow::Result<Option<P
         let original_hash = content_fingerprint(&original_material);
 
         if is_post_duplicate_blocking(&original_hash, "")? {
+            app_log::info!("X 自动发帖内容准备：跳过重复新闻，news_id={}", news_id);
             continue;
         }
 
+        app_log::info!("X 自动发帖内容准备：选中候选新闻，news_id={}", news_id);
         let mut content = generate_post(&candidate)?;
         if let Some(url) = candidate.url.as_deref().map(str::trim).filter(|url| {
             url.starts_with("https://") || url.starts_with("http://")
@@ -323,6 +330,7 @@ pub fn prepare_next_post_blocking(filter: NewsFilter) -> anyhow::Result<Option<P
         )
         .with_context(|| format!("预留{}新闻发帖记录失败", candidate.kind.label()))?;
 
+        app_log::info!("X 自动发帖内容准备：已预留发帖记录，post_id={}", post_id);
         return Ok(Some(PreparedPost {
             post_id,
             news_id,
@@ -335,6 +343,7 @@ pub fn prepare_next_post_blocking(filter: NewsFilter) -> anyhow::Result<Option<P
         }));
     }
 
+    app_log::warn!("X 自动发帖内容准备：遍历完所有候选，未找到可发布新闻");
     Ok(None)
 }
 
