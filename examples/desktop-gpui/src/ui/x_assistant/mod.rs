@@ -204,7 +204,9 @@ impl XAssistantPage {
     }
 
     fn start_test_auto_post(&mut self, cx: &mut Context<Self>) {
+        app_log::info!("X 自动发帖测试：收到测试按钮点击，当前 replying={}", self.replying);
         if self.replying {
+            app_log::warn!("X 自动发帖测试：已有自动化任务运行，忽略本次点击");
             return;
         }
         self.replying = true;
@@ -219,12 +221,15 @@ impl XAssistantPage {
         let filter = auto_post::content::NewsFilter::from_setting(
             &self.task_settings.auto_post_news_type,
         );
+        app_log::info!("X 自动发帖测试：任务已提交后台，新闻类型={:?}", filter);
         self._reply_task = cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
+                    app_log::info!("X 自动发帖测试：后台执行开始；先读取新闻并生成文案，准备完成后才会打开浏览器");
                     auto_post::executor::run_test_once(&cancel, filter)
                 })
                 .await;
+            app_log::info!("X 自动发帖测试：后台执行结束，准备更新界面结果");
             _ = this.update(cx, |this, cx| {
                 this.replying = false;
                 match result {
