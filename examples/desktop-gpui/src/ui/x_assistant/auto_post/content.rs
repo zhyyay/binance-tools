@@ -285,9 +285,9 @@ fn strip_urls(value: &str) -> String {
     output.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 中文句号后统一保留一个半角空格，便于 X 帖子阅读。
-/// 句末不添加尾随空格，已有多个空格/换行会归一为一个空格。
-fn space_after_chinese_period(value: &str) -> String {
+/// 中文句号后统一换行，便于 X 帖子分句阅读。
+/// 清理句号后的空格/已有换行，避免连续空行；句末不添加多余换行。
+fn newline_after_chinese_period(value: &str) -> String {
     let mut output = String::with_capacity(value.len() + 8);
     let mut chars = value.chars().peekable();
 
@@ -298,7 +298,7 @@ fn space_after_chinese_period(value: &str) -> String {
                 chars.next();
             }
             if chars.peek().is_some() {
-                output.push(' ');
+                output.push('\n');
             }
         }
     }
@@ -313,7 +313,7 @@ fn clean_ai_text(value: &str) -> String {
         .trim_matches('“')
         .trim_matches('”')
         .trim();
-    space_after_chinese_period(cleaned)
+    newline_after_chinese_period(cleaned)
 }
 fn generate_post(candidate: &NewsCandidate) -> anyhow::Result<String> {
     app_log::info!("X 自动发帖内容准备：开始调用 AI 改写新闻，类型={:?}，标题={}", candidate.kind, candidate.title);
@@ -441,13 +441,13 @@ mod tests {
     }
 
     #[test]
-    fn adds_one_space_after_chinese_sentence_periods() {
+    fn adds_line_break_after_chinese_sentence_periods() {
         assert_eq!(
-            super::space_after_chinese_period("第一句。第二句。  第三句"),
-            "第一句。 第二句。 第三句"
+            super::newline_after_chinese_period("第一句。第二句。  第三句"),
+            "第一句。\n第二句。\n第三句"
         );
         assert_eq!(
-            super::space_after_chinese_period("句末。"),
+            super::newline_after_chinese_period("句末。"),
             "句末。"
         );
     }
