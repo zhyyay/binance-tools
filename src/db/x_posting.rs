@@ -10,6 +10,8 @@ pub struct XAssistantTaskSettings {
     pub auto_comment_enabled: bool,
     pub own_post_reply_enabled: bool,
     pub posts_per_hour: u8,
+    /// crypto | entertainment | all
+    pub auto_post_news_type: String,
 }
 
 impl Default for XAssistantTaskSettings {
@@ -20,6 +22,7 @@ impl Default for XAssistantTaskSettings {
             auto_comment_enabled: false,
             own_post_reply_enabled: false,
             posts_per_hour: 3,
+            auto_post_news_type: "all".to_string(),
         }
     }
 }
@@ -78,6 +81,7 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
             auto_comment_enabled INTEGER NOT NULL DEFAULT 0,
             own_post_reply_enabled INTEGER NOT NULL DEFAULT 0,
             posts_per_hour INTEGER NOT NULL DEFAULT 3 CHECK (posts_per_hour BETWEEN 1 AND 10),
+            auto_post_news_type TEXT NOT NULL DEFAULT 'all',
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -131,6 +135,22 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
         "#,
     )
     .context("initialize X assistant task persistence schema")?;
+
+    // Upgrade databases created before the news-type preference existed.
+    let has_news_type = {
+        let mut statement = connection.prepare("PRAGMA table_info(x_assistant_task_settings)")?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+        columns.collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "auto_post_news_type")
+    };
+    if !has_news_type {
+        connection.execute(
+            "ALTER TABLE x_assistant_task_settings
+             ADD COLUMN auto_post_news_type TEXT NOT NULL DEFAULT 'all'",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -140,7 +160,7 @@ pub fn load_task_settings_blocking() -> anyhow::Result<XAssistantTaskSettings> {
     connection
         .query_row(
             "SELECT auto_reply_enabled, auto_post_enabled, auto_comment_enabled,
-                    own_post_reply_enabled, posts_per_hour
+                    own_post_reply_enabled, posts_per_hour, auto_post_news_type
              FROM x_assistant_task_settings WHERE id = 1",
             [],
             |row| {
@@ -150,6 +170,11 @@ pub fn load_task_settings_blocking() -> anyhow::Result<XAssistantTaskSettings> {
                     auto_comment_enabled: row.get::<_, i64>(2)? != 0,
                     own_post_reply_enabled: row.get::<_, i64>(3)? != 0,
                     posts_per_hour: row.get::<_, i64>(4)?.clamp(1, 10) as u8,
+                    auto_post_news_type: match row.get::<_, String>(5)?.as_str() {
+                        "crypto" => "crypto".to_string(),
+                        "entertainment" => "entertainment".to_string(),
+                        _ => "all".to_string(),
+                    },
                 })
             },
         )
@@ -167,6 +192,7 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
              auto_comment_enabled = ?3,
              own_post_reply_enabled = ?4,
              posts_per_hour = ?5,
+             auto_post_news_type = ?6,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = 1",
         params![
@@ -174,7 +200,12 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
             settings.auto_post_enabled,
             settings.auto_comment_enabled,
             settings.own_post_reply_enabled,
-            posts_per_hour
+            posts_per_hour,
+            match settings.auto_post_news_type.as_str() {
+                "crypto" => "crypto",
+                "entertainment" => "entertainment",
+                _ => "all",
+            }
         ],
     )?;
     Ok(())
