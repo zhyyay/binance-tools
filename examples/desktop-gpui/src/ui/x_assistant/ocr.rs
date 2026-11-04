@@ -1738,6 +1738,7 @@ mod tests {
 
     #[test]
     fn accepts_common_chinese_ocr_confusions_in_sent_toast() {
+        assert!(contains_sent_confirmation("你的贴已发送。查看"));
         assert!(contains_sent_confirmation("你的帖孑已发送。查看"));
         assert!(contains_sent_confirmation("你的回复已发送。查看"));
         assert!(!contains_sent_confirmation("草稿内容仍在编辑框中"));
