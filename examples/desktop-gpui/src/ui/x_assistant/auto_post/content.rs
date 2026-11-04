@@ -142,7 +142,7 @@ fn hot_score(kind: NewsKind, title: &str, summary: &str, timestamp: &str) -> i64
     }
 
     if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp) {
-        let age_hours = (chrono::Utc::now() - parsed.with_timezone(&chrono::Utc))
+        let age_hours = (app_log::beijing_now() - parsed.with_timezone(&app_log::beijing_timezone()))
             .num_hours().max(0);
         score += match age_hours {
             0..=2 => 8,
