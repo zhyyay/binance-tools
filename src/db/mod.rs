@@ -436,7 +436,7 @@ fn run_migrations(connection: &Connection) -> anyhow::Result<()> {
         .execute(
             r#"
             UPDATE binance_square_tasks
-            SET scheduled_at = COALESCE(scheduled_at, datetime('now', 'localtime')),
+            SET scheduled_at = COALESCE(scheduled_at, datetime('now', '+8 hours')),
                 send_status = COALESCE(NULLIF(send_status, ''), 'pending'),
                 source_type = COALESCE(NULLIF(source_type, ''), 'manual')
             "#,
