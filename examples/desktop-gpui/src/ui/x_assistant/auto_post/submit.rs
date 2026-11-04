@@ -35,7 +35,7 @@ fn screenshot_path(label: &str) -> anyhow::Result<PathBuf> {
         .join("screenshots");
     std::fs::create_dir_all(&root)
         .with_context(|| format!("创建截图目录失败：{}", root.display()))?;
-    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S%.3f");
+    let timestamp = app_log::beijing_now().format("%Y%m%d-%H%M%S%.3f");
     Ok(root.join(format!("auto-post-{timestamp}-{label}.png")))
 }
 
