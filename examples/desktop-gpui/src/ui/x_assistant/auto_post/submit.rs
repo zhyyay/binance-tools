@@ -121,15 +121,49 @@ pub fn submit_prepared_post(
             .context("X 发帖页面已请求打开，但未能切换到浏览器窗口")?;
         wait_or_cancel(cancel, Duration::from_secs(4))?;
 
-        // 地址栏截图用于确认导航目标；客户区截图用于获得可直接点击的坐标。
-        let route_image = capture_desktop(post.post_id, "compose-route")?;
-        let current_url = ocr::recognize_current_url(&route_image)?
-            .context("OCR 未能确认当前 X 页面地址")?;
+        // 不再只等待固定 9 秒识别一次。页面加载、浏览器绘制和 OCR 偶发漏识别
+        // 都可能造成首张截图无文字；每秒重试，直到识别到目标地址或超时。
+        let mut confirmed_url = None;
+        for attempt in 1..=20 {
+            check_cancel(cancel)?;
+            let route_image = capture_desktop(
+                post.post_id,
+                &format!("compose-route-{attempt:02}"),
+            )?;
+            match ocr::recognize_current_url(&route_image) {
+                Ok(Some(url)) if ocr::is_x_compose_post_address(&url) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 第 {attempt}/20 次截图识别到 X 发帖地址：{url}"
+                    ));
+                    confirmed_url = Some(url);
+                    break;
+                }
+                Ok(Some(url)) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 第 {attempt}/20 次识别到地址但不是发帖页：{url}，继续等待页面就绪"
+                    ));
+                }
+                Ok(None) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 第 {attempt}/20 次截图未识别到地址栏文字，1 秒后重试"
+                    ));
+                }
+                Err(error) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 第 {attempt}/20 次地址栏 OCR 出错：{error:#}，1 秒后重试"
+                    ));
+                }
+            }
+            if attempt < 20 {
+                wait_or_cancel(cancel, Duration::from_secs(1))?;
+            }
+        }
         ensure!(
-            ocr::is_x_compose_post_address(&current_url),
-            "当前页面不是 X 新发帖页面：{current_url}"
+            confirmed_url.is_some(),
+            "连续 20 次截图仍未能通过 OCR 确认 X 发帖地址；请检查浏览器是否加载完成及截图是否清晰"
         );
 
+        // 地址确认后再截取浏览器客户区；该尺寸与自动回复保持一致。
         check_cancel(cancel)?;
         let page_image = capture_window(post.post_id, "compose-empty")?;
         let (width, height) = automation::native::get_window_client_size()?;
