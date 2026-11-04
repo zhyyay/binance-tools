@@ -15,7 +15,7 @@ use std::{
 use anyhow::{Context, ensure};
 
 use super::{
-    content::prepare_next_post_blocking,
+    content::{NewsFilter, prepare_next_post_blocking},
     submit::{SubmitOutcome, SubmitResult, submit_prepared_post},
 };
 use crate::ui::x_assistant::core::{scheduler::next_post_delay, task_queue::run_browser_task};
@@ -34,9 +34,22 @@ fn wait_or_cancel(cancel: &AtomicBool, duration: Duration) -> anyhow::Result<()>
 }
 
 /// 生成并提交一条新闻帖子。该函数自行取得浏览器租约，调用方不要再次加锁。
-pub fn run_once(cancel: &AtomicBool) -> anyhow::Result<Option<SubmitResult>> {
+fn run_once_with_mode(
+    cancel: &AtomicBool,
+    filter: NewsFilter,
+    require_enabled: bool,
+) -> anyhow::Result<Option<SubmitResult>> {
     ensure!(!cancel.load(Ordering::Acquire), "自动发帖已停止");
-    let Some(post) = prepare_next_post_blocking()? else {
+    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
+    if require_enabled && !settings.auto_post_enabled {
+        return Ok(None);
+    }
+    let hourly_count = binance_tools::db::x_posting::count_posts_last_hour_blocking()?;
+    ensure!(
+        hourly_count < u64::from(settings.posts_per_hour.clamp(1, 10)),
+        "已达到每小时发布上限，暂不能执行发帖（测试发帖同样计入限额）"
+    );
+    let Some(post) = prepare_next_post_blocking(filter)? else {
         return Ok(None);
     };
 
@@ -47,30 +60,35 @@ pub fn run_once(cancel: &AtomicBool) -> anyhow::Result<Option<SubmitResult>> {
         )?;
         return Ok(None);
     }
-    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
-    if !settings.auto_post_enabled {
-        binance_tools::db::x_posting::mark_post_failed_blocking(
-            post.post_id,
-            "自动发帖开关已关闭，未提交到 X",
-        )?;
-        return Ok(None);
-    }
-    let hourly_count = binance_tools::db::x_posting::count_posts_last_hour_blocking()?;
-    if hourly_count >= u64::from(settings.posts_per_hour.clamp(1, 10)) {
-        binance_tools::db::x_posting::mark_post_failed_blocking(
-            post.post_id,
-            "内容准备期间已达到每小时发布上限，等待下一轮重新准备",
-        )?;
-        return Ok(None);
+    if require_enabled {
+        let latest = binance_tools::db::x_posting::load_task_settings_blocking()?;
+        if !latest.auto_post_enabled {
+            binance_tools::db::x_posting::mark_post_failed_blocking(
+                post.post_id,
+                "自动发帖开关已关闭，未提交到 X",
+            )?;
+            return Ok(None);
+        }
     }
     run_browser_task(|| submit_prepared_post(&post, cancel))
         .with_context(|| format!("执行 X 发帖任务 {} 失败", post.post_id))
         .map(Some)
 }
 
+pub fn run_once(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<Option<SubmitResult>> {
+    run_once_with_mode(cancel, filter, true)
+}
+
+/// 测试按钮只准备并提交一条真实帖子，不启动持续循环；测试帖子同样计入小时限额。
+pub fn run_test_once(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<SubmitResult> {
+    let result = run_once_with_mode(cancel, filter, false)?
+        .context("所选新闻类型没有可用于测试的未发布候选")?;
+    Ok(result)
+}
+
 /// 按数据库中的每小时上限持续发布。未知结果、AI/浏览器错误都会终止本轮，
 /// 不会自动重试可能已提交的内容。
-pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
+pub fn run_loop(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<u64> {
     let mut published_this_run = 0_u64;
 
     loop {
@@ -109,7 +127,7 @@ pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
             continue;
         }
 
-        let next_result = match run_once(cancel) {
+        let next_result = match run_once(cancel, filter) {
             Ok(result) => result,
             Err(error) if cancel.load(Ordering::Acquire) => {
                 crate::ui::x_assistant::automation::log_event(&format!(
@@ -155,10 +173,11 @@ pub fn run_loop(cancel: &AtomicBool) -> anyhow::Result<u64> {
 pub fn run_with_auto_reply(
     cancel: Arc<AtomicBool>,
     reply_options: crate::ui::x_assistant::vision::VisionReplyOptions,
+    filter: NewsFilter,
 ) -> anyhow::Result<u64> {
     let post_cancel = Arc::clone(&cancel);
     let post_worker = thread::spawn(move || {
-        let result = run_loop(&post_cancel);
+        let result = run_loop(&post_cancel, filter);
         if result.is_err() {
             post_cancel.store(true, Ordering::Release);
         }
