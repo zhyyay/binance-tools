@@ -63,7 +63,7 @@ impl SquareKeySettingsPage {
                         let masked_key = mask_key(&key.api_key);
                         this.status = Some(format!(
                             "已加载 {}，更新时间 {}",
-                            masked_key, key.updated_at
+                            masked_key, app_log::format_utc_timestamp(&key.updated_at)
                         ));
                     }
                     Ok(None) => {
@@ -1671,7 +1671,7 @@ impl TableDelegate for SquareTasksTableDelegate {
             "message" => Self::cell(non_empty(&task.message)),
             "scheduled_at" => Self::cell(non_empty(&task.scheduled_at)),
             "send_status" => Self::cell(non_empty(&task.send_status)),
-            "updated_at" => Self::cell(task.updated_at.clone()),
+            "updated_at" => Self::cell(app_log::format_utc_timestamp(&task.updated_at)),
             _ => Self::cell(""),
         }
     }
@@ -2051,7 +2051,7 @@ impl SquareSendLogsTableDelegate {
             "status" => log.status.clone(),
             "response_code" => log.response_code.clone().unwrap_or_default(),
             "retry_count" => log.retry_count.to_string(),
-            "sent_at" => log.sent_at.clone(),
+            "sent_at" => app_log::format_utc_timestamp(&log.sent_at),
             "message_digest" => log.message_digest.clone(),
             "error_message" => log.error_message.clone().unwrap_or_default(),
             _ => String::new(),
