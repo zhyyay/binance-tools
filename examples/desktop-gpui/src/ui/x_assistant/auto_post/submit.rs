@@ -79,7 +79,14 @@ pub fn submit_prepared_post(
 
     let operation = (|| -> anyhow::Result<SubmitResult> {
         check_cancel(cancel)?;
-        automation::native::activate_browser()?;
+        // 浏览器未启动时自动打开 X；随后必须确认浏览器窗口已就绪。
+        if automation::native::activate_browser().is_err() {
+            super::super::option::open_chrome()
+                .context("未检测到可用浏览器，自动启动 Chrome 失败")?;
+            wait_or_cancel(cancel, Duration::from_secs(5))?;
+            automation::native::activate_browser()
+                .context("Chrome 已启动，但未能切换到浏览器窗口")?;
+        }
         automation::native::navigate_to_x_compose()?;
         wait_or_cancel(cancel, Duration::from_secs(4))?;
 
@@ -132,34 +139,19 @@ pub fn submit_prepared_post(
         click_attempted = true;
         automation::native::click_at_client_position(submit_point.0, submit_point.1)?;
 
-        wait_or_cancel(cancel, Duration::from_secs(5))?;
-        let result_page = capture_window("after-submit")?;
-        let result_route_image = capture_desktop("after-submit-route")?;
-        let result_url = ocr::recognize_current_url(&result_route_image)?;
-        let left_composer = result_url
-            .as_deref()
-            .is_some_and(|url| !ocr::is_x_compose_post_address(url));
-        let post_visible = ocr::verify_post_published(&result_page, &post.content)?;
-
-        if left_composer && post_visible {
-            binance_tools::db::x_posting::mark_post_published_blocking(post.post_id, None)?;
-            Ok(SubmitResult {
-                post_id: post.post_id,
-                outcome: SubmitOutcome::Published,
-                message: "X 页面已离开发帖编辑页，且 OCR 找到已提交正文，已记为发布成功。".to_string(),
-            })
-        } else {
-            let reason = format!(
-                "点击发布后无法可靠确认结果；页面地址={:?}，正文/成功提示可见={post_visible}。必须人工核验 X 页面，禁止自动重发。",
-                result_url
-            );
-            binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
-            Ok(SubmitResult {
-                post_id: post.post_id,
-                outcome: SubmitOutcome::Unknown,
-                message: reason,
-            })
-        }
+        // 最终发布成功校验暂留待补充；先保存提交后的完整页面截图。
+        wait_or_cancel(cancel, Duration::from_secs(3))?;
+        let result_page = capture_window("after-submit-awaiting-confirmation")?;
+        let reason = format!(
+            "已点击发帖按钮，提交后页面截图已保存：{}。发布结果尚未执行最终校验，等待补充底部提示识别规则；禁止自动重发。",
+            result_page.display()
+        );
+        binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
+        Ok(SubmitResult {
+            post_id: post.post_id,
+            outcome: SubmitOutcome::Unknown,
+            message: reason,
+        })
     })();
 
     match operation {
