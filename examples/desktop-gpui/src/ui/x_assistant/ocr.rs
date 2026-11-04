@@ -86,7 +86,9 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
     Ok(None)
 }
 
-/// 只有 OCR 在发帖页右下方明确识别到 Post/发帖/发布按钮才返回坐标。
+/// 根据完整浏览器页面截图定位发帖弹窗右下角的 Post/发帖按钮。
+/// X 的 compose 弹窗位于页面中上部，不能沿用时间线底部按钮的 y 坐标范围；
+/// 同时排除左侧导航栏的全局“发帖”入口，避免点击错位置。
 pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i32, i32)>> {
     let doc = recognize_document(path)?;
     let labels = ["post", "发帖", "发布"];
@@ -97,17 +99,22 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
         let x = (line.left + line.right) * 0.5 / doc.scale_x;
         let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
         let label_match = labels.iter().any(|label| text == normalize_text(label).to_lowercase());
-        (label_match && x >= width * 0.52 && x <= width * 0.99 && y >= height * 0.58)
-            .then_some((x, y))
+
+        // 对应截图中的居中 compose 弹窗：按钮在弹窗右下侧，而非页面最底部。
+        let in_compose_dialog = x >= width * 0.45
+            && x <= width * 0.90
+            && y >= height * 0.15
+            && y <= height * 0.65;
+        (label_match && in_compose_dialog).then_some((x, y))
     }).max_by(|left, right| left.1.total_cmp(&right.1));
 
     if let Some((x, y)) = candidate {
         super::automation::log_event(&format!(
-            "[自动发帖 OCR] 已识别到右下方提交按钮，坐标=({x:.0},{y:.0})"
+            "[自动发帖 OCR] 已从 compose 弹窗识别到提交按钮，坐标=({x:.0},{y:.0})"
         ));
         Ok(Some((x.round() as i32, y.round() as i32)))
     } else {
-        super::automation::log_event("[自动发帖 OCR] 未识别到可信的 Post/发帖按钮，禁止猜测坐标。");
+        super::automation::log_event("[自动发帖 OCR] 完整页面中未识别到 compose 弹窗右下角的 Post/发帖按钮，禁止点击左侧全局发帖入口或猜测坐标。");
         Ok(None)
     }
 }
