@@ -21,6 +21,7 @@ use gpui_component::{
     ActiveTheme, Disableable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     h_flex,
+    input::{Input, InputEvent, InputState},
     scroll::ScrollableElement,
     table::{Column, Table as DataTable, TableDelegate, TableState},
     v_flex,
@@ -42,6 +43,8 @@ pub struct DbNewsItem {
 
 pub struct CryptoNewsPage {
     table: Entity<TableState<CryptoNewsTableDelegate>>,
+    search_input: Entity<InputState>,
+    _search_subscription: Subscription,
     _table_subscription: Subscription,
     news_items: Vec<DbNewsItem>,
     status: Option<String>,
@@ -73,10 +76,20 @@ impl CryptoNewsPage {
                 .row_selectable(true)
         });
 
+        let search_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("搜索新闻 ID")
+                .default_value("")
+        });
+        let search_subscription =
+            cx.subscribe_in(&search_input, window, Self::on_search_input_event);
+
         let table_subscription =
             cx.subscribe_in(&table, window, Self::on_rewrite_requested);
         let mut instance = Self {
             table,
+            search_input,
+            _search_subscription: search_subscription,
             _table_subscription: table_subscription,
             news_items: Vec::new(),
             status: None,
@@ -95,16 +108,38 @@ impl CryptoNewsPage {
         instance
     }
 
+    fn refresh_table_page(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_input.read(cx).value().trim().to_string();
+        let items = if query.is_empty() {
+            self.news_items.clone()
+        } else {
+            self.news_items.iter().filter(|item| item.id.to_string() == query).cloned().collect()
+        };
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().set_news(items);
+            table.refresh(cx);
+        });
+    }
+
+    fn on_search_input_event(
+        &mut self,
+        _: &Entity<InputState>,
+        event: &InputEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(event, InputEvent::Change) {
+            self.refresh_table_page(cx);
+            cx.notify();
+        }
+    }
+
     fn reload_news(&mut self, cx: &mut Context<Self>) {
         match Self::fetch_from_db() {
             Ok(items) => {
                 self.news_items = items;
                 self.error = None;
-                let items_clone = self.news_items.clone();
-                self.table.update(cx, |table, cx| {
-                    table.delegate_mut().set_news(items_clone);
-                    table.refresh(cx);
-                });
+                self.refresh_table_page(cx);
             }
             Err(err) => {
                 self.error = Some(format!("加载新闻失败: {err}"));
@@ -392,11 +427,7 @@ impl CryptoNewsPage {
         });
 
         self.news_items = scored.into_iter().map(|(_, item)| item).collect();
-        let items_clone = self.news_items.clone();
-        self.table.update(cx, |table, cx| {
-            table.delegate_mut().set_news(items_clone);
-            table.refresh(cx);
-        });
+        self.refresh_table_page(cx);
         hot_count
     }
 
@@ -468,6 +499,7 @@ impl CryptoNewsTableDelegate {
     fn new() -> Self {
         Self {
             columns: vec![
+                Column::new("id", "ID").width(px(76.)).sortable(),
                 Column::new("source", "来源").width(px(120.)).sortable(),
                 Column::new("title", "标题").width(px(360.)).sortable(),
                 Column::new("content", "内容").width(px(520.)),
@@ -532,6 +564,7 @@ impl TableDelegate for CryptoNewsTableDelegate {
         let key = self.columns[col_ix].key.as_ref();
 
         match key {
+            "id" => Self::text_cell(item.id.to_string(), palette::muted(theme)),
             "source" => Self::text_cell(item.source.clone(), palette::text(theme)),
             "title" => {
                 let title = match item.hot_rank {
@@ -667,6 +700,11 @@ impl Render for CryptoNewsPage {
                                 h_flex()
                                     .justify_end()
                                     .gap_2()
+                                    .child(
+                                        div().w(px(260.)).max_w(px(320.)).child(
+                                            Input::new(&self.search_input).small().cleanable(true),
+                                        ),
+                                    )
                                     .child(
                                         Button::new("sync_news_btn")
                                             .outline()
