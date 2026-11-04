@@ -833,20 +833,9 @@ impl Render for XAssistantPage {
                 })
                 .into_any_element();
         }
-        app_log::info!(
-            self.show_task_settings,
-            self.show_auto_post,
-            self.show_reply_list,
-            self.show_post_history
-        );
         let menu = self.render_page_menu(cx);
         let theme = cx.theme();
         let selected_image = self.screenshots.get(self.selected_screenshot).cloned();
-        app_log::info!(
-            self.screenshots.len(),
-            self.selected_screenshot,
-            selected_image.is_some()
-        );
         let zoom_image = selected_image.clone();
 
         let element = v_flex()
