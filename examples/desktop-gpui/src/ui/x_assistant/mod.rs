@@ -789,11 +789,21 @@ impl Render for XAssistantPage {
                 })
                 .into_any_element();
         }
+        app_log::info!("X 辅助诊断：开始构建主页面菜单");
         let menu = self.render_page_menu(cx);
+        app_log::info!("X 辅助诊断：主页面菜单构建完成");
         let theme = cx.theme();
+        app_log::info!("X 辅助诊断：主题读取完成");
         let selected_image = self.screenshots.get(self.selected_screenshot).cloned();
+        app_log::info!(
+            "X 辅助诊断：截图状态，数量={}，选中索引={}，是否有选中图片={}",
+            self.screenshots.len(),
+            self.selected_screenshot,
+            selected_image.is_some()
+        );
         let zoom_image = selected_image.clone();
 
+        app_log::info!("X 辅助诊断：开始构建主页面元素树");
         v_flex()
             .size_full()
             .relative()
