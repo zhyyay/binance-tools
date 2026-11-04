@@ -39,19 +39,27 @@ fn run_once_with_mode(
     filter: NewsFilter,
     require_enabled: bool,
 ) -> anyhow::Result<Option<SubmitResult>> {
+    app_log::info!("X 自动发帖执行器：开始单次任务，filter={:?}，require_enabled={}", filter, require_enabled);
     ensure!(!cancel.load(Ordering::Acquire), "自动发帖已停止");
+    app_log::info!("X 自动发帖执行器：读取任务设置");
     let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
+    app_log::info!("X 自动发帖执行器：设置读取完成，auto_post_enabled={}，posts_per_hour={}", settings.auto_post_enabled, settings.posts_per_hour);
     if require_enabled && !settings.auto_post_enabled {
         return Ok(None);
     }
+    app_log::info!("X 自动发帖执行器：检查最近一小时发布数量");
     let hourly_count = binance_tools::db::x_posting::count_posts_last_hour_blocking()?;
+    app_log::info!("X 自动发帖执行器：最近一小时已发布 {} 条", hourly_count);
     ensure!(
         hourly_count < u64::from(settings.posts_per_hour.clamp(1, 10)),
         "已达到每小时发布上限，暂不能执行发帖（测试发帖同样计入限额）"
     );
+    app_log::info!("X 自动发帖执行器：开始读取新闻候选并生成文案；此阶段尚不会打开浏览器");
     let Some(post) = prepare_next_post_blocking(filter)? else {
+        app_log::warn!("X 自动发帖执行器：没有可用于测试的未发布新闻候选，浏览器不会启动");
         return Ok(None);
     };
+    app_log::info!("X 自动发帖执行器：文案准备完成，post_id={}，接下来获取浏览器任务锁", post.post_id);
 
     if cancel.load(Ordering::Acquire) {
         binance_tools::db::x_posting::mark_post_failed_blocking(
@@ -70,9 +78,11 @@ fn run_once_with_mode(
             return Ok(None);
         }
     }
-    run_browser_task(|| submit_prepared_post(&post, cancel))
-        .with_context(|| format!("执行 X 发帖任务 {} 失败", post.post_id))
-        .map(Some)
+    app_log::info!("X 自动发帖执行器：开始获取浏览器锁并提交 X 发帖任务");
+    let result = run_browser_task(|| submit_prepared_post(&post, cancel))
+        .with_context(|| format!("执行 X 发帖任务 {} 失败", post.post_id))?;
+    app_log::info!("X 自动发帖执行器：浏览器提交流程结束，post_id={}，outcome={:?}", result.post_id, result.outcome);
+    Ok(Some(result))
 }
 
 pub fn run_once(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<Option<SubmitResult>> {
