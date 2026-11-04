@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
@@ -17,6 +17,27 @@ pub fn beijing_timezone() -> FixedOffset {
 /// 获取当前北京时间。
 pub fn beijing_now() -> DateTime<FixedOffset> {
     Utc::now().with_timezone(&beijing_timezone())
+}
+
+/// 将数据库常见的 UTC 时间字符串转换为北京时间显示。
+/// 支持 RFC 3339 和 SQLite CURRENT_TIMESTAMP 格式；无法解析时原样返回。
+pub fn format_utc_timestamp(value: &str) -> String {
+    let parsed = DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|time| time.with_timezone(&Utc))
+        .or_else(|| {
+            NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f")
+                .ok()
+                .map(|time| time.and_utc())
+        });
+
+    parsed
+        .map(|time| {
+            time.with_timezone(&beijing_timezone())
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        })
+        .unwrap_or_else(|| value.to_string())
 }
 
 #[derive(Clone, Copy, Debug)]
