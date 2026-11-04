@@ -1,0 +1,126 @@
+use chrono::Local;
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, Write},
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+};
+
+static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
+static WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Clone, Copy, Debug)]
+pub enum Level {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl Level {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Debug => "DEBUG",
+            Self::Info => "INFO",
+            Self::Warn => "WARN",
+            Self::Error => "ERROR",
+        }
+    }
+}
+
+/// 初始化日志目录。默认写入当前工作目录下的 logs/。
+pub fn init() -> io::Result<PathBuf> {
+    if let Some(path) = LOG_DIR.get() {
+        return Ok(path.clone());
+    }
+
+    let path = std::env::current_dir()?.join("logs");
+    fs::create_dir_all(&path)?;
+
+    // 多线程同时初始化时，保留第一个成功设置的目录。
+    let _ = LOG_DIR.set(path.clone());
+    Ok(LOG_DIR.get().cloned().unwrap_or(path))
+}
+
+/// 返回当前日志目录。
+pub fn log_dir() -> io::Result<PathBuf> {
+    if let Some(path) = LOG_DIR.get() {
+        return Ok(path.clone());
+    }
+    init()
+}
+
+/// 将日志追加到 logs/ 下指定文件。文件名只允许是单层文件名。
+pub fn write_to(
+    file_name: &str,
+    level: Level,
+    message: impl AsRef<str>,
+) -> io::Result<()> {
+    let file_path = Path::new(file_name);
+    if file_name.is_empty()
+        || file_path.file_name().and_then(|name| name.to_str()) != Some(file_name)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "log file name must be a plain file name",
+        ));
+    }
+
+    let directory = log_dir()?;
+    fs::create_dir_all(&directory)?;
+
+    let _guard = WRITE_LOCK
+        .lock()
+        .map_err(|_| io::Error::other("log writer lock poisoned"))?;
+
+    let path = directory.join(file_name);
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    writeln!(file, "[{timestamp}] [{}] {}", level.as_str(), message.as_ref())?;
+    file.flush()
+}
+
+/// 安装 panic hook，将 panic 信息和 backtrace 追加到 logs/crash.log。
+pub fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let message = format!("{panic_info}\nBacktrace:\n{backtrace}");
+        // 日志系统故障不能让 panic hook 再次 panic。
+        let _ = write_to("crash.log", Level::Error, message);
+    }));
+}
+
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("app.log", $crate::Level::Debug, format!($($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("app.log", $crate::Level::Info, format!($($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("app.log", $crate::Level::Warn, format!($($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("app.log", $crate::Level::Error, format!($($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! log_to {
+    ($file:expr, $level:expr, $($arg:tt)*) => {
+        let _ = $crate::write_to($file, $level, format!($($arg)*));
+    };
+}
