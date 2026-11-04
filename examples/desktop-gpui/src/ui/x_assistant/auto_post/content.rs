@@ -340,7 +340,7 @@ pub fn prepare_next_post_blocking(filter: NewsFilter) -> anyhow::Result<Option<P
 
 #[cfg(test)]
 mod tests {
-    use super::{NewsKind, clean_ai_text};
+    use super::{NewsFilter, NewsKind, clean_ai_text};
 
     #[test]
     fn cleans_wrapped_ai_output() {
@@ -350,6 +350,19 @@ mod tests {
     #[test]
     fn prompts_are_distinct_by_news_category() {
         assert_ne!(NewsKind::Crypto.system_prompt(), NewsKind::Entertainment.system_prompt());
+    }
+
+    #[test]
+    fn news_filter_only_includes_selected_category() {
+        assert!(NewsFilter::Crypto.includes(NewsKind::Crypto));
+        assert!(!NewsFilter::Crypto.includes(NewsKind::Entertainment));
+        assert!(NewsFilter::Entertainment.includes(NewsKind::Entertainment));
+        assert!(!NewsFilter::Entertainment.includes(NewsKind::Crypto));
+        assert!(NewsFilter::All.includes(NewsKind::Crypto));
+        assert!(NewsFilter::All.includes(NewsKind::Entertainment));
+        assert_eq!(NewsFilter::from_setting("crypto"), NewsFilter::Crypto);
+        assert_eq!(NewsFilter::from_setting("entertainment"), NewsFilter::Entertainment);
+        assert_eq!(NewsFilter::from_setting("invalid"), NewsFilter::All);
     }
 
     #[test]
