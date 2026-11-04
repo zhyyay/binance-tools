@@ -60,8 +60,8 @@ pub struct XAssistantPage {
     show_post_history: bool,
     show_task_settings: bool,
     show_auto_post: bool,
-    reply_list: Entity<reply_list::ReplyListPage>,
-    post_history: Entity<post_history::PostHistoryPage>,
+    reply_list: Option<Entity<reply_list::ReplyListPage>>,
+    post_history: Option<Entity<post_history::PostHistoryPage>>,
     task_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
 }
 
@@ -83,8 +83,6 @@ impl XAssistantPage {
         });
         let reply_rules_subscription =
             cx.subscribe_in(&reply_rules, window, Self::on_reply_rules_input);
-        let reply_list = cx.new(|cx| reply_list::ReplyListPage::new(window, cx));
-        let post_history = cx.new(|cx| post_history::PostHistoryPage::new(window, cx));
         let task_settings = binance_tools::db::x_posting::load_task_settings_blocking()
             .unwrap_or_default();
 
@@ -107,8 +105,8 @@ impl XAssistantPage {
             show_post_history: false,
             show_task_settings: false,
             show_auto_post: false,
-            reply_list,
-            post_history,
+            reply_list: None,
+            post_history: None,
             task_settings,
         }
     }
@@ -465,12 +463,16 @@ impl XAssistantPage {
             .into_any_element()
     }
 
-    fn open_reply_list(&mut self, cx: &mut Context<Self>) {
+    fn open_reply_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(page) = &self.reply_list {
+            page.update(cx, |page, cx| page.reload(cx));
+        } else {
+            self.reply_list = Some(cx.new(|cx| reply_list::ReplyListPage::new(window, cx)));
+        }
         self.show_reply_list = true;
         self.show_post_history = false;
         self.show_task_settings = false;
         self.show_auto_post = false;
-        self.reply_list.update(cx, |page, cx| page.reload(cx));
         cx.notify();
     }
 
@@ -483,12 +485,16 @@ impl XAssistantPage {
         cx.notify();
     }
 
-    fn open_post_history(&mut self, cx: &mut Context<Self>) {
+    fn open_post_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(page) = &self.post_history {
+            page.update(cx, |page, cx| page.reload(cx));
+        } else {
+            self.post_history = Some(cx.new(|cx| post_history::PostHistoryPage::new(window, cx)));
+        }
         self.show_reply_list = false;
         self.show_post_history = true;
         self.show_task_settings = false;
         self.show_auto_post = false;
-        self.post_history.update(cx, |page, cx| page.reload(cx));
         cx.notify();
     }
 
@@ -607,7 +613,7 @@ impl XAssistantPage {
                     .when(self.show_reply_list, |button| button.primary())
                     .when(!self.show_reply_list, |button| button.outline())
                     .small()
-                    .on_click(cx.listener(|this, _, _, cx| this.open_reply_list(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
             )
 
             .child(
@@ -616,7 +622,7 @@ impl XAssistantPage {
                     .when(self.show_post_history, |button| button.primary())
                     .when(!self.show_post_history, |button| button.outline())
                     .small()
-                    .on_click(cx.listener(|this, _, _, cx| this.open_post_history(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx))),
             )
             .child(
                 Button::new("x-assistant-task-settings-tab")
@@ -764,8 +770,12 @@ impl Render for XAssistantPage {
                 .gap_3()
                 .p_3()
                 .child(self.render_page_menu(cx))
-                .when(self.show_reply_list, |page| page.child(self.reply_list.clone()))
-                .when(self.show_post_history, |page| page.child(self.post_history.clone()))
+                .when_some(self.reply_list.clone(), |page, reply_list| {
+                    if self.show_reply_list { page.child(reply_list) } else { page }
+                })
+                .when_some(self.post_history.clone(), |page, post_history| {
+                    if self.show_post_history { page.child(post_history) } else { page }
+                })
                 .into_any_element();
         }
         let menu = self.render_page_menu(cx);
