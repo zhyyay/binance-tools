@@ -27,6 +27,7 @@ pub fn format_utc_timestamp(value: &str) -> String {
         .map(|time| time.with_timezone(&Utc))
         .or_else(|| {
             NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f")
+                .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S"))
                 .ok()
                 .map(|time| time.and_utc())
         });
