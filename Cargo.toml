@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["examples/desktop-gpui", "crates/evm-wallet", "crates/ocr-rs","crates/crypto-rss"]
+members = ["examples/desktop-gpui", "crates/evm-wallet", "crates/ocr-rs", "crates/crypto-rss", "crates/app-log"]
 default-members = ["."]
 resolver = "3"
 
