@@ -19,7 +19,6 @@ pub(super) fn log_event(message: &str) {
 #[cfg(windows)]
 pub(super) mod native {
     use std::{
-        fs,
         mem::{size_of, zeroed},
         path::Path,
         sync::atomic::{AtomicU64, Ordering},
@@ -548,29 +547,19 @@ pub(super) mod native {
             ReleaseDC(None, screen);
         }
         anyhow::ensure!(rows == height, "读取屏幕截图像素失败");
-        for alpha in pixels.iter_mut().skip(3).step_by(4) {
-            *alpha = 255;
+        // GetDIBits 返回 32-bit BI_RGB 像素，内存通道顺序为 BGRA。
+        // 转成 RGBA 后再真正编码为 PNG，不能只把 BMP 数据写入 .png 文件。
+        for pixel in pixels.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+            pixel[3] = 255;
         }
-        save_bmp(path, width, height, &pixels)
+        save_png(path, width, height, &pixels)
     }
 
-    fn save_bmp(path: &Path, width: i32, height: i32, pixels: &[u8]) -> anyhow::Result<()> {
-        let data_size = u32::try_from(pixels.len())?;
-        let mut bmp = Vec::with_capacity(pixels.len() + 54);
-        bmp.extend_from_slice(b"BM");
-        bmp.extend_from_slice(&(data_size + 54).to_le_bytes());
-        bmp.extend_from_slice(&[0; 4]);
-        bmp.extend_from_slice(&54u32.to_le_bytes());
-        bmp.extend_from_slice(&40u32.to_le_bytes());
-        bmp.extend_from_slice(&width.to_le_bytes());
-        bmp.extend_from_slice(&(-height).to_le_bytes());
-        bmp.extend_from_slice(&1u16.to_le_bytes());
-        bmp.extend_from_slice(&32u16.to_le_bytes());
-        bmp.extend_from_slice(&0u32.to_le_bytes());
-        bmp.extend_from_slice(&data_size.to_le_bytes());
-        bmp.extend_from_slice(&[0; 16]);
-        bmp.extend_from_slice(pixels);
-        fs::write(path, bmp)?;
+    fn save_png(path: &Path, width: i32, height: i32, pixels: &[u8]) -> anyhow::Result<()> {
+        let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels.to_vec())
+            .ok_or_else(|| anyhow::anyhow!("创建 PNG 图像缓冲区失败"))?;
+        image.save_with_format(path, image::ImageFormat::Png)?;
         Ok(())
     }
 }
