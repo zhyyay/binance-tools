@@ -496,7 +496,7 @@ impl CryptoNewsTableDelegate {
         chrono::DateTime::parse_from_rfc3339(value)
             .map(|time| {
                 time.with_timezone(
-                    &chrono::FixedOffset::east_opt(8 * 60 * 60).expect("UTC+8 offset is valid"),
+                    &app_log::beijing_timezone(),
                 )
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string()
