@@ -24,6 +24,30 @@ pub enum NewsKind {
     Entertainment,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewsFilter {
+    Crypto,
+    Entertainment,
+    All,
+}
+
+impl NewsFilter {
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "crypto" => Self::Crypto,
+            "entertainment" => Self::Entertainment,
+            _ => Self::All,
+        }
+    }
+
+    fn includes(self, kind: NewsKind) -> bool {
+        matches!(self, Self::All)
+            || matches!((self, kind),
+                (Self::Crypto, NewsKind::Crypto)
+                    | (Self::Entertainment, NewsKind::Entertainment))
+    }
+}
+
 impl NewsKind {
     fn table(self) -> &'static str {
         match self {
@@ -133,11 +157,14 @@ fn hot_score(kind: NewsKind, title: &str, summary: &str, timestamp: &str) -> i64
 }
 
 /// 复用新闻页面的币圈/娱乐关键词与新鲜度权重，跨来源统一按热点分排序。
-fn load_candidates() -> anyhow::Result<Vec<NewsCandidate>> {
+fn load_candidates(filter: NewsFilter) -> anyhow::Result<Vec<NewsCandidate>> {
     let connection = open_default_connection()?;
     let mut candidates = Vec::new();
 
     for kind in [NewsKind::Crypto, NewsKind::Entertainment] {
+        if !filter.includes(kind) {
+            continue;
+        }
         let sql = format!(
             "SELECT id, title, COALESCE(NULLIF(chinese_title, ''), title),                     COALESCE(NULLIF(chinese_summary, ''), summary), url,                     published_at, collected_at              FROM {}              ORDER BY datetime(COALESCE(published_at, collected_at)) DESC              LIMIT ?1",
             kind.table()
@@ -254,10 +281,9 @@ fn generate_post(candidate: &NewsCandidate) -> anyhow::Result<String> {
     Ok(content)
 }
 
-/// 准备一条新闻发帖：读取两类新闻、按时间排序、过滤重复项、AI 改写，
-/// 最后在触碰浏览器之前将内容持久化为 pending。没有候选时返回 None。
-pub fn prepare_next_post_blocking() -> anyhow::Result<Option<PreparedPost>> {
-    let candidates = load_candidates()?;
+/// 按所选新闻类型准备一条候选，先按热点分排序，再去重、AI 改写并持久化。
+pub fn prepare_next_post_blocking(filter: NewsFilter) -> anyhow::Result<Option<PreparedPost>> {
+    let candidates = load_candidates(filter)?;
 
     for candidate in candidates {
         let news_id = format!("{}:{}", candidate.kind.table(), candidate.id);
