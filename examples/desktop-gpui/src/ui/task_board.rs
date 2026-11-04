@@ -671,7 +671,8 @@ impl TaskBoardPage {
                                     .text_color(palette::muted(app_theme))
                                     .child(format!(
                                         "创建：{}    更新：{}",
-                                        task.created_at, task.updated_at
+                                        app_log::format_utc_timestamp(&task.created_at),
+                                         app_log::format_utc_timestamp(&task.updated_at)
                                     )),
                             )
                             .child(
