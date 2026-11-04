@@ -307,7 +307,9 @@ fn newline_after_chinese_period(value: &str) -> String {
 }
 
 fn clean_ai_text(value: &str) -> String {
-    let cleaned = strip_urls(value)
+    // 先绑定拥有所有权的 String，避免对 strip_urls 临时值保留借用。
+    let without_urls = strip_urls(value);
+    let cleaned = without_urls
         .trim()
         .trim_matches('"')
         .trim_matches('“')
