@@ -18,11 +18,11 @@ icons = ["assets/app.ico"]
 
 [dependencies]
 anyhow = "1.0"
+app-log = { path = "../../crates/app-log" }
 binance_tools = { path = "../.." }
 crypto-rss = { path = "../../crates/crypto-rss" }
 evm-wallet = { path = "../../crates/evm-wallet" }
 ocr-rs = { path = "../../crates/ocr-rs" }
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
 image = { version = "0.25.10", default-features = false, features = ["bmp", "png"] }
 
 gpui = "0.2.2"
