@@ -54,8 +54,12 @@ fn sync_latest_news(filter: NewsFilter) -> anyhow::Result<(usize, usize)> {
     let failed_feeds = reports.len().saturating_sub(successful_feeds);
     for report in &reports {
         match &report.error {
-            Some(error) => app_log::warn!("RSS 同步失败：{}：{}", report.source, error),
-            None => app_log::info!("RSS 同步完成：{}，获取 {} 条", report.source, report.fetched),
+            Some(error) => {
+                app_log::warn!("RSS 同步失败：{}：{}", report.source, error);
+            }
+            None => {
+                app_log::info!("RSS 同步完成：{}，获取 {} 条", report.source, report.fetched);
+            }
         }
     }
     anyhow::ensure!(
