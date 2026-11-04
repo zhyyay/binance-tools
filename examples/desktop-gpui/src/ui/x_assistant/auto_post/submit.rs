@@ -112,17 +112,27 @@ pub fn submit_prepared_post(
     let mut click_attempted = false;
 
     let operation = (|| -> anyhow::Result<SubmitResult> {
+        automation::log_event(&format!(
+            "[自动发帖][步骤 1/8] 开始执行，数据库记录 ID={}，正文长度={} 字符",
+            post.post_id,
+            post.content.chars().count()
+        ));
         check_cancel(cancel)?;
         // 直接让 Chrome 打开 X 发帖地址，不再模拟地址栏输入，避免网址漏字或截断。
+        automation::log_event("[自动发帖][步骤 2/8] 正在启动 Chrome 并打开 https://x.com/compose/post");
         super::super::option::open_chrome()
             .context("启动 Chrome 并直接打开 X 发帖页面失败")?;
+        automation::log_event("[自动发帖] Chrome 启动命令已执行，等待页面加载 5 秒");
         wait_or_cancel(cancel, Duration::from_secs(5))?;
+        automation::log_event("[自动发帖] 正在激活浏览器窗口");
         automation::native::activate_browser()
             .context("X 发帖页面已请求打开，但未能切换到浏览器窗口")?;
+        automation::log_event("[自动发帖] 浏览器窗口已激活，再等待 4 秒后开始地址栏 OCR"); 
         wait_or_cancel(cancel, Duration::from_secs(4))?;
 
         // 不再只等待固定 9 秒识别一次。页面加载、浏览器绘制和 OCR 偶发漏识别
         // 都可能造成首张截图无文字；每秒重试，直到识别到目标地址或超时。
+        automation::log_event("[自动发帖][步骤 3/8] 开始校验地址栏，最多重试 20 次");
         let mut confirmed_url = None;
         for attempt in 1..=20 {
             check_cancel(cancel)?;
@@ -162,13 +172,19 @@ pub fn submit_prepared_post(
             confirmed_url.is_some(),
             "连续 20 次截图仍未能通过 OCR 确认 X 发帖地址；请检查浏览器是否加载完成及截图是否清晰"
         );
+        automation::log_event("[自动发帖] 地址栏校验通过，确认进入 X 发帖页面");
 
         // 地址确认后再截取浏览器客户区；该尺寸与自动回复保持一致。
+        automation::log_event("[自动发帖][步骤 4/8] 正在截取浏览器客户区并 OCR 定位发帖输入框");
         check_cancel(cancel)?;
         let page_image = capture_window(post.post_id, "compose-empty")?;
         let (width, height) = automation::native::get_window_client_size()?;
         let input_point = ocr::locate_post_composer_input(&page_image)?
             .context("未能通过 OCR 可靠定位发帖输入框，已停止")?;
+        automation::log_event(&format!(
+            "[自动发帖] 已识别发帖输入框，客户区坐标=({}, {})",
+            input_point.0, input_point.1
+        ));
         ensure!(
             input_point.0 >= 0
                 && input_point.1 >= 0
@@ -177,19 +193,31 @@ pub fn submit_prepared_post(
             "OCR 发帖输入框坐标超出浏览器客户区"
         );
 
+        automation::log_event("[自动发帖][步骤 5/8] 点击输入框并输入待发布正文");
         automation::native::click_at_client_position(input_point.0, input_point.1)?;
         thread::sleep(Duration::from_millis(250));
         automation::native::type_text(&post.content)?;
         wait_or_cancel(cancel, Duration::from_millis(900))?;
 
+        automation::log_event("[自动发帖][步骤 6/8] 正文已输入，截图并执行 OCR 正文核验");
         let typed_image = capture_window(post.post_id, "compose-typed")?;
+        let content_verified = ocr::verify_post_composer_content(&typed_image, &post.content)?;
+        automation::log_event(&format!(
+            "[自动发帖] 正文 OCR 核验结果：{}",
+            if content_verified { "通过" } else { "失败" }
+        ));
         ensure!(
-            ocr::verify_post_composer_content(&typed_image, &post.content)?,
+            content_verified,
             "发帖正文输入后未通过 OCR 核验，未点击发布"
         );
 
+        automation::log_event("[自动发帖][步骤 7/8] 正文核验通过，正在 OCR 定位弹窗内的发帖按钮");
         let submit_point = ocr::locate_post_submit_button(&typed_image)?
             .context("未能通过 OCR 可靠定位 Post/发帖按钮，未点击发布")?;
+        automation::log_event(&format!(
+            "[自动发帖] 已识别弹窗发帖按钮，客户区坐标=({}, {})",
+            submit_point.0, submit_point.1
+        ));
         ensure!(
             submit_point.0 >= 0
                 && submit_point.1 >= 0
@@ -201,8 +229,10 @@ pub fn submit_prepared_post(
         check_cancel(cancel)?;
         binance_tools::db::x_posting::mark_post_submitting_blocking(post.post_id)?;
         // 从这一行起，鼠标事件可能部分生效；任何错误都必须记为 unknown。
+        automation::log_event("[自动发帖][步骤 8/8] 准备点击弹窗发帖按钮");
         click_attempted = true;
         automation::native::click_at_client_position(submit_point.0, submit_point.1)?;
+        automation::log_event("[自动发帖] 发帖按钮点击动作已执行，等待页面反馈 3 秒");
 
         // 最终发布成功校验暂留待补充；先保存提交后的完整页面截图。
         wait_or_cancel(cancel, Duration::from_secs(3))?;
@@ -212,6 +242,10 @@ pub fn submit_prepared_post(
             result_page.display()
         );
         binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
+        automation::log_event(&format!(
+            "[自动发帖] 流程结束：记录 ID={} 状态=Unknown，等待补充发布成功提示校验；截图={}",
+            post.post_id, result_page.display()
+        ));
         Ok(SubmitResult {
             post_id: post.post_id,
             outcome: SubmitOutcome::Unknown,
@@ -223,6 +257,10 @@ pub fn submit_prepared_post(
         Ok(result) => Ok(result),
         Err(error) => {
             let reason = format!("{error:#}");
+            automation::log_event(&format!(
+                "[自动发帖] 流程中止：记录 ID={}，是否已尝试点击发帖按钮={}，错误={}",
+                post.post_id, click_attempted, reason
+            ));
             if click_attempted {
                 // 不确定的点击结果绝不能降级成 failed，否则恢复逻辑可能重发。
                 let _ = binance_tools::db::x_posting::mark_post_unknown_blocking(
