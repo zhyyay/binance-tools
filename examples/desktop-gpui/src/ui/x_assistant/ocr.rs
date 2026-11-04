@@ -86,37 +86,80 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
     Ok(None)
 }
 
-/// 根据完整浏览器页面截图定位发帖弹窗右下角的 Post/发帖按钮。
-/// X 的 compose 弹窗位于页面中上部，不能沿用时间线底部按钮的 y 坐标范围；
-/// 同时排除左侧导航栏的全局“发帖”入口，避免点击错位置。
+/// 根据 compose 弹窗右下区域定位 Post/发帖按钮。
+/// 先裁剪弹窗右下区域并尝试多种 OCR 预处理，避免整页小字号按钮漏识别；
+/// 同时用坐标范围排除左侧导航栏的全局“发帖”入口。
 pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i32, i32)>> {
-    let doc = recognize_document(path)?;
-    let labels = ["post", "发帖", "发布"];
-    let width = doc_width(path)? as f32;
-    let height = doc_height(path)? as f32;
-    let candidate = doc.lines.iter().filter_map(|line| {
-        let text = normalize_text(&line.text).to_lowercase();
-        let x = (line.left + line.right) * 0.5 / doc.scale_x;
-        let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
-        let label_match = labels.iter().any(|label| text == normalize_text(label).to_lowercase());
+    use image::imageops::crop_imm;
 
-        // 对应截图中的居中 compose 弹窗：按钮在弹窗右下侧，而非页面最底部。
-        let in_compose_dialog = x >= width * 0.45
-            && x <= width * 0.90
-            && y >= height * 0.15
-            && y <= height * 0.65;
-        (label_match && in_compose_dialog).then_some((x, y))
-    }).max_by(|left, right| left.1.total_cmp(&right.1));
+    let source = image::open(path)?;
+    let width = source.width() as f32;
+    let height = source.height() as f32;
+    anyhow::ensure!(width >= 800.0 && height >= 600.0, "发帖按钮定位截图尺寸异常");
 
-    if let Some((x, y)) = candidate {
-        super::automation::log_event(&format!(
-            "[自动发帖 OCR] 已从 compose 弹窗识别到提交按钮，坐标=({x:.0},{y:.0})"
-        ));
-        Ok(Some((x.round() as i32, y.round() as i32)))
-    } else {
-        super::automation::log_event("[自动发帖 OCR] 完整页面中未识别到 compose 弹窗右下角的 Post/发帖按钮，禁止点击左侧全局发帖入口或猜测坐标。");
-        Ok(None)
+    // X compose 弹窗的提交按钮位于弹窗右下角。裁剪区域覆盖该区域，
+    // 但不包含左侧导航栏；坐标最终仍映射回原始浏览器客户区。
+    let crop_left = (width * 0.48) as u32;
+    let crop_top = (height * 0.24) as u32;
+    let crop_right = (width * 0.90) as u32;
+    let crop_bottom = (height * 0.62) as u32;
+    anyhow::ensure!(
+        crop_right > crop_left && crop_bottom > crop_top,
+        "发帖按钮 OCR 裁剪区域无效"
+    );
+    let crop = crop_imm(
+        &source,
+        crop_left,
+        crop_top,
+        crop_right - crop_left,
+        crop_bottom - crop_top,
+    )
+    .to_image();
+    let crop = image::DynamicImage::ImageRgba8(crop);
+
+    // 原图保留抗锯齿信息；依次尝试无二值化和不同阈值，兼容不同显示缩放、
+    // 屏幕亮度及 OCR 对小号中文按钮文字的漏识别。
+    let modes = [(3, 1, None), (2, 1, None), (4, 3, Some(220))];
+    for (attempt, (scale_num, scale_den, threshold)) in modes.iter().enumerate() {
+        let doc = recognize_document_image(&crop, *scale_num, *scale_den, *threshold)?;
+        let candidate = doc.lines.iter().filter_map(|line| {
+            let text = normalize_text(&line.text).to_lowercase();
+            let local_x = (line.left + line.right) * 0.5 / doc.scale_x;
+            let local_y = (line.top + line.bottom) * 0.5 / doc.scale_y;
+            let x = local_x + crop_left as f32;
+            let y = local_y + crop_top as f32;
+
+            // OCR 可能把按钮文字与相邻符号合并，因此允许包含匹配；
+            // 但候选必须位于弹窗右下区域，不能仅凭文字命中就点击。
+            let label_match = text.contains("发帖")
+                || text.contains("发布")
+                || text.contains("post");
+            let in_button_zone = x >= width * 0.55
+                && x <= width * 0.88
+                && y >= height * 0.28
+                && y <= height * 0.60;
+            super::automation::log_event(&format!(
+                "[自动发帖 OCR] 发帖按钮候选检查：模式={}，文本={:?}，坐标=({:.0},{:.0})，文字匹配={}，区域匹配={}",
+                attempt + 1, line.text, x, y, label_match, in_button_zone
+            ));
+            (label_match && in_button_zone).then_some((x, y, line.text.as_str()))
+        }).max_by(|left, right| {
+            left.0.total_cmp(&right.0).then_with(|| left.1.total_cmp(&right.1))
+        });
+
+        if let Some((x, y, recognized)) = candidate {
+            super::automation::log_event(&format!(
+                "[自动发帖 OCR] 已从 compose 弹窗右下区域识别到提交按钮：文本={recognized:?}，坐标=({x:.0},{y:.0})，模式={}",
+                attempt + 1
+            ));
+            return Ok(Some((x.round() as i32, y.round() as i32)));
+        }
     }
+
+    super::automation::log_event(
+        "[自动发帖 OCR] compose 弹窗右下区域未识别到可信的 Post/发帖按钮；未点击，禁止猜测坐标。",
+    );
+    Ok(None)
 }
 
 /// 输入后必须能在截图 OCR 文本中匹配到正文，才允许继续提交。
