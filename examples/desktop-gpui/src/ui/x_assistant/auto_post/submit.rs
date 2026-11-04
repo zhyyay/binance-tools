@@ -62,7 +62,39 @@ fn wait_or_cancel(cancel: &AtomicBool, duration: Duration) -> anyhow::Result<()>
 
 fn capture_window(post_id: i64, label: &str) -> anyhow::Result<PathBuf> {
     let path = screenshot_path(post_id, label)?;
+    // 与自动回复保持一致：只截取浏览器客户区，不截取整个桌面或任务栏。
+    let (expected_width, expected_height) = automation::native::get_window_client_size()?;
+    anyhow::ensure!(
+        expected_width >= 800 && expected_height >= 600,
+        "浏览器客户区尺寸异常（{}x{}），停止自动发帖截图",
+        expected_width,
+        expected_height
+    );
+
     automation::native::capture_window(&path)?;
+    let image = image::open(&path)
+        .with_context(|| format!("读取自动发帖截图失败：{}", path.display()))?;
+    anyhow::ensure!(
+        image.width() >= 800 && image.height() >= 600,
+        "自动发帖截图尺寸异常（{}x{}）",
+        image.width(),
+        image.height()
+    );
+    anyhow::ensure!(
+        image.width().abs_diff(expected_width) <= 4
+            && image.height().abs_diff(expected_height) <= 4,
+        "自动发帖截图与浏览器客户区尺寸不一致：截图={}x{}，窗口={}x{}",
+        image.width(),
+        image.height(),
+        expected_width,
+        expected_height
+    );
+    automation::log_event(&format!(
+        "[自动发帖] 浏览器客户区截图已保存：{}，尺寸 {}x{}",
+        path.display(),
+        image.width(),
+        image.height()
+    ));
     Ok(path)
 }
 
