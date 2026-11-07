@@ -118,6 +118,17 @@ impl XAssistantPage {
             return;
         }
         if self.task_settings.auto_post_enabled {
+            // 自动回复与自动发帖同时启用时，必须先完成自动回复首轮。
+            // 若自动发送被关闭，不允许静默退化为“启动后立即发帖”。
+            if self.task_settings.auto_reply_enabled && !self.auto_send {
+                self.status = None;
+                self.error = Some(
+                    "自动回复调度已开启，但「自动发送」处于关闭状态。为避免启动后直接发帖，请先开启自动发送，再开始自动化。"
+                        .to_string(),
+                );
+                cx.notify();
+                return;
+            }
             self.start_auto_post(cx);
             return;
         }
