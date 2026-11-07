@@ -484,14 +484,15 @@ impl XAssistantPage {
 
     fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         app_log::info!("X 任务设置：开始渲染设置面板");
-        let theme = cx.theme();
 
+        // 先创建需要可变借用 Context 的按钮，再读取主题，避免 cx 的借用冲突。
         let auto_reply_button = self.render_auto_reply_setting_button(cx);
         let auto_post_button = self.render_auto_post_setting_button(cx);
         let auto_comment_button = self.render_auto_comment_setting_button(cx);
         let own_post_reply_button = self.render_own_post_reply_setting_button(cx);
         let rate_controls = self.render_post_rate_controls(cx);
 
+        let theme = cx.theme();
         let panel = v_flex()
             .gap_2()
             .rounded(px(10.))
