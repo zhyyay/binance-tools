@@ -88,10 +88,12 @@ impl AutoReplyRunner {
                 return self.stop();
             }
 
+            let completed_before = self.completed;
             let result = self.run_once(&options, cancel);
 
-            // 首轮回复流程成功结束并释放浏览器租约后，通知自动发帖调度器加入。
-            if result.is_ok() {
+            // 只有真正成功发送并计入 completed 的回复，才允许启动自动发帖。
+            // 跳过重复账号、识别不完整或未发送成功，都不能触发发帖调度。
+            if result.is_ok() && self.completed > completed_before {
                 if let Some(sender) = first_cycle_sender.take() {
                     let _ = sender.send(());
                 }
