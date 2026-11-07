@@ -232,14 +232,69 @@ pub fn submit_prepared_post(
         automation::log_event("[自动发帖][步骤 8/8] 准备点击弹窗发帖按钮");
         click_attempted = true;
         automation::native::click_at_client_position(submit_point.0, submit_point.1)?;
-        automation::log_event("[自动发帖] 发帖按钮点击动作已执行，开始轮询页面底部的发布成功提示");
+        automation::log_event("[自动发帖] 发帖按钮点击动作已执行，先检查编辑弹窗是否真正提交");
+
+        // 先等待 X 处理点击，再检查原正文是否仍留在编辑器。
+        // 如果正文和提交按钮都仍然存在，说明第一次点击没有关闭编辑弹窗；
+        // 允许基于新截图重新 OCR 定位后补点一次，绝不复用旧坐标或盲目连点。
+        wait_or_cancel(cancel, Duration::from_millis(2200))?;
+        let first_result_page = capture_window(post.post_id, "after-submit-state-check-01")?;
+        let mut last_result_page = Some(first_result_page.clone());
+        let mut composer_still_open = match ocr::verify_post_composer_content(&first_result_page, &post.content) {
+            Ok(still_present) => still_present,
+            Err(error) => {
+                automation::log_event(&format!(
+                    "[自动发帖] 首次点击后无法判断编辑器状态：{error:#}；不进行补点"
+                ));
+                false
+            }
+        };
+
+        if composer_still_open {
+            automation::log_event("[自动发帖] 首次点击后正文仍显示在编辑器，重新识别提交按钮，准备进行唯一一次安全补点");
+            if let Some(retry_point) = ocr::locate_post_submit_button(&first_result_page)? {
+                ensure!(
+                    retry_point.0 >= 0
+                        && retry_point.1 >= 0
+                        && retry_point.0 < width as i32
+                        && retry_point.1 < height as i32,
+                    "重新识别的提交按钮坐标超出浏览器客户区，取消补点"
+                );
+                check_cancel(cancel)?;
+                automation::log_event(&format!(
+                    "[自动发帖] 编辑器仍存在，重新识别按钮坐标=({}, {})，执行唯一一次补点",
+                    retry_point.0, retry_point.1
+                ));
+                automation::native::click_at_client_position(retry_point.0, retry_point.1)?;
+                wait_or_cancel(cancel, Duration::from_millis(2200))?;
+                let retry_state_page = capture_window(post.post_id, "after-submit-state-check-02")?;
+                last_result_page = Some(retry_state_page.clone());
+                composer_still_open = match ocr::verify_post_composer_content(&retry_state_page, &post.content) {
+                    Ok(still_present) => still_present,
+                    Err(error) => {
+                        automation::log_event(&format!(
+                            "[自动发帖] 补点后无法判断编辑器状态：{error:#}；不再点击"
+                        ));
+                        true
+                    }
+                };
+                if composer_still_open {
+                    automation::log_event("[自动发帖] 唯一一次补点后正文仍在编辑器，停止点击，等待结果核验");
+                } else {
+                    automation::log_event("[自动发帖] 补点后编辑器正文已消失，继续检查发布成功提示");
+                }
+            } else {
+                automation::log_event("[自动发帖] 编辑器仍存在但未能重新定位提交按钮，不进行补点");
+            }
+        } else {
+            automation::log_event("[自动发帖] 首次点击后未再识别到原正文，可能已提交，继续核验成功状态");
+        }
 
         // X 的成功 toast 会短暂显示在页面底部。分次截图并只 OCR 底部区域；
         // 只有识别到“你的贴已发送。查看”一类明确提示才标记 Published。
-        let mut last_result_page = None;
         let mut published = false;
         for attempt in 1..=5 {
-            wait_or_cancel(cancel, Duration::from_millis(if attempt == 1 { 1800 } else { 1200 }))?;
+            wait_or_cancel(cancel, Duration::from_millis(if attempt == 1 { 900 } else { 1200 }))?;
             let result_page = capture_window(
                 post.post_id,
                 &format!("after-submit-toast-check-{attempt:02}"),
