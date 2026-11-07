@@ -208,18 +208,21 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
     let height = source.height();
     anyhow::ensure!(width >= 800 && height >= 600, "发布结果截图尺寸异常（{width}x{height}）");
 
-    // toast 位于浏览器客户区底部，裁剪最后 30% 区域，避免对整页重复 OCR。
+    // X 的成功提示是屏幕下方偏中间的蓝色浮层，不在整条底边。
+    // 只裁剪页面中下部的中央区域，减少 NFL/时间线/侧栏等文字干扰。
+    // 该比例同时适用于浏览器客户区截图和完整桌面截图。
+    let left = width * 25 / 100;
+    let right = width * 75 / 100;
     let top = height * 70 / 100;
-    let crop = crop_imm(&source, 0, top, width, height - top).to_image();
+    let bottom = height * 96 / 100;
+    let crop = crop_imm(&source, left, top, right - left, bottom - top).to_image();
     let crop = image::DynamicImage::ImageRgba8(crop);
 
-    // X 的 toast 字体较小且背景可能随主题变化。单一阈值容易漏检，
-    // 因此使用多种 OCR 预处理；任意一种识别到明确成功文案即返回成功。
+    // 先使用灰度放大识别；漏检时再尝试两种阈值，避免对整页做多轮 OCR。
     let modes = [
-        (4, 3, Some(200), "1.33x threshold-200"),
         (2, 1, None, "2x grayscale"),
-        (2, 1, Some(220), "2x threshold-220"),
         (3, 2, Some(180), "1.5x threshold-180"),
+        (2, 1, Some(220), "2x threshold-220"),
     ];
     let mut last_text = String::new();
     for (scale_num, scale_den, threshold, mode) in modes {
@@ -227,7 +230,7 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
         let recognized = doc.text.trim();
         let matched = contains_sent_confirmation(recognized);
         super::automation::log_event(&format!(
-            "[自动发帖 OCR] 底部发布提示识别（{mode}）：匹配={}，识别文本={:?}",
+            "[自动发帖 OCR] 中下部成功提示识别（{mode}）：匹配={}，识别文本={:?}",
             matched, recognized
         ));
         last_text = recognized.to_string();
@@ -236,7 +239,7 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
         }
     }
     super::automation::log_event(&format!(
-        "[自动发帖 OCR] 多种预处理均未识别到成功提示，最后识别文本={:?}",
+        "[自动发帖 OCR] 中下部区域未识别到成功提示，最后识别文本={:?}",
         last_text
     ));
     Ok(false)
