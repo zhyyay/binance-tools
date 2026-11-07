@@ -90,9 +90,11 @@ impl AutoReplyRunner {
 
             let result = self.run_once(&options, cancel);
 
-            // 首轮回复已完成并释放浏览器租约后，通知自动发帖调度器可以加入。
-            if let Some(sender) = first_cycle_sender.take() {
-                let _ = sender.send(());
+            // 首轮回复流程成功结束并释放浏览器租约后，通知自动发帖调度器加入。
+            if result.is_ok() {
+                if let Some(sender) = first_cycle_sender.take() {
+                    let _ = sender.send(());
+                }
             }
 
             // 用户取消优先于当前轮次产生的错误。
