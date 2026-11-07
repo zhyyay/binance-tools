@@ -104,6 +104,21 @@ fn capture_desktop(post_id: i64, label: &str) -> anyhow::Result<PathBuf> {
     Ok(path)
 }
 
+/// 在关键鼠标操作前重新读取浏览器地址栏，避免旧截图/旧 OCR 结果继续驱动点击。
+fn ensure_x_compose_route(post_id: i64, label: &str) -> anyhow::Result<()> {
+    let route_image = capture_desktop(post_id, label)?;
+    let address = ocr::recognize_current_url(&route_image)?
+        .context("无法重新确认浏览器地址栏；为避免误点，停止自动发帖")?;
+    ensure!(
+        ocr::is_x_compose_post_address(&address),
+        "浏览器当前地址已不是 X 发帖页面（识别到：{address}）；为避免误点，停止自动发帖"
+    );
+    automation::log_event(&format!(
+        "[自动发帖] 二次地址校验通过：{address}"
+    ));
+    Ok(())
+}
+
 /// 执行一条已预留的发帖任务。该函数要求调用方已经持有统一浏览器锁。
 pub fn submit_prepared_post(
     post: &PreparedPost,
@@ -178,6 +193,9 @@ pub fn submit_prepared_post(
         automation::log_event("[自动发帖][步骤 4/8] 正在截取浏览器客户区并 OCR 定位发帖输入框");
         check_cancel(cancel)?;
         let page_image = capture_window(post.post_id, "compose-empty")?;
+        // 地址栏在步骤 3/8 校验后可能发生跳转。必须在使用客户区截图定位前
+        // 再次确认仍处于 compose/post，不能让主页上的相似文字触发点击。
+        ensure_x_compose_route(post.post_id, "compose-route-recheck-before-input")?;
         let (width, height) = automation::native::get_window_client_size()?;
         let input_point = ocr::locate_post_composer_input(&page_image)?
             .context("未能通过 OCR 可靠定位发帖输入框，已停止")?;
@@ -185,6 +203,15 @@ pub fn submit_prepared_post(
             "[自动发帖] 已识别发帖输入框，客户区坐标=({}, {})",
             input_point.0, input_point.1
         ));
+        ensure!(
+            input_point.0 >= (width as f32 * 0.28) as i32
+                && input_point.0 <= (width as f32 * 0.68) as i32
+                && input_point.1 >= (height as f32 * 0.12) as i32
+                && input_point.1 <= (height as f32 * 0.85) as i32,
+            "OCR 输入框坐标不在页面中央的发帖弹窗范围内（({}, {})）；拒绝点击",
+            input_point.0,
+            input_point.1
+        );
         ensure!(
             input_point.0 >= 0
                 && input_point.1 >= 0
@@ -201,6 +228,9 @@ pub fn submit_prepared_post(
 
         automation::log_event("[自动发帖][步骤 6/8] 正文已输入，截图并执行 OCR 正文核验");
         let typed_image = capture_window(post.post_id, "compose-typed")?;
+        // 如果点击输入框时弹窗已关闭或页面跳回主页，立即停止；
+        // 不能仅凭中央区域出现相似正文就继续定位提交按钮。
+        ensure_x_compose_route(post.post_id, "compose-route-recheck-after-typing")?;
         let content_verified = ocr::verify_post_composer_content(&typed_image, &post.content)?;
         automation::log_event(&format!(
             "[自动发帖] 正文 OCR 核验结果：{}",
