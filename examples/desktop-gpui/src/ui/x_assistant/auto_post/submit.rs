@@ -264,130 +264,43 @@ pub fn submit_prepared_post(
         automation::native::click_at_client_position(submit_point.0, submit_point.1)?;
         automation::log_event("[自动发帖] 发帖按钮点击动作已执行，先检查编辑弹窗是否真正提交");
 
-        // 先等待 X 处理点击，再检查原正文是否仍留在编辑器。
-        // 如果正文和提交按钮都仍然存在，说明第一次点击没有关闭编辑弹窗；
-        // 允许基于新截图重新 OCR 定位后补点一次，绝不复用旧坐标或盲目连点。
-        wait_or_cancel(cancel, Duration::from_millis(2200))?;
-        let first_result_page = capture_window(post.post_id, "after-submit-state-check-01")?;
-        let mut last_result_page = Some(first_result_page.clone());
+        // 点击发布后不再尝试第二次点击：X 可能已经发布，只是成功 toast OCR 暂时漏检。
+        // 发布后的截图改为整个桌面截图，不依赖 GetForegroundWindow()；
+        // 即使用户切换到其他窗口，也不能因为 capture_window 前台校验失败而中断状态核验。
+        wait_or_cancel(cancel, Duration::from_millis(700))?;
+        let mut published = false;
+        let mut last_result_page = None;
 
-        // 先检查明确的成功提示，再检查正文是否仍在编辑器。
-        // X 提交成功后会回到时间线，原正文可能出现在时间线上；
-        // 若先做正文匹配，会把时间线正文误判为编辑器仍打开，触发重复点击。
-        let mut published = match ocr::recognize_post_sent_toast(&first_result_page) {
-            Ok(true) => {
-                automation::log_event(
-                    "[自动发帖] 首次提交后截图已识别到底部“你的帖子已发送。查看”，立即确认成功，不再补点",
-                );
-                true
+        for attempt in 1..=6 {
+            check_cancel(cancel)?;
+            if attempt > 1 {
+                wait_or_cancel(cancel, Duration::from_millis(700))?;
             }
-            Ok(false) => false,
-            Err(error) => {
-                automation::log_event(&format!(
-                    "[自动发帖] 首次提交后成功提示 OCR 失败：{error:#}；继续检查编辑器状态"
-                ));
-                false
-            }
-        };
-
-        let mut composer_still_open = if published {
-            false
-        } else {
-            match ocr::verify_post_composer_content(&first_result_page, &post.content) {
-                Ok(still_present) => still_present,
-                Err(error) => {
-                    automation::log_event(&format!(
-                        "[自动发帖] 首次点击后无法判断编辑器状态：{error:#}；不进行补点"
-                    ));
-                    false
-                }
-            }
-        };
-
-        if !published && composer_still_open {
-            automation::log_event("[自动发帖] 首次点击后正文仍显示在编辑器，重新识别提交按钮，准备进行唯一一次安全补点");
-            if let Some(retry_point) = ocr::locate_post_submit_button(&first_result_page)? {
-                ensure!(
-                    retry_point.0 >= 0
-                        && retry_point.1 >= 0
-                        && retry_point.0 < width as i32
-                        && retry_point.1 < height as i32,
-                    "重新识别的提交按钮坐标超出浏览器客户区，取消补点"
-                );
-                check_cancel(cancel)?;
-                automation::log_event(&format!(
-                    "[自动发帖] 编辑器仍存在，重新识别按钮坐标=({}, {})，执行唯一一次补点",
-                    retry_point.0, retry_point.1
-                ));
-                automation::native::click_at_client_position(retry_point.0, retry_point.1)?;
-                wait_or_cancel(cancel, Duration::from_millis(2200))?;
-                let retry_state_page = capture_window(post.post_id, "after-submit-state-check-02")?;
-                last_result_page = Some(retry_state_page.clone());
-
-                // 补点后仍然先看成功 toast，避免再次把时间线正文当成编辑器正文。
-                published = matches!(
-                    ocr::recognize_post_sent_toast(&retry_state_page),
-                    Ok(true)
-                );
-                if published {
-                    automation::log_event(
-                        "[自动发帖] 补点后截图已识别到底部发布成功提示，立即停止后续点击与等待",
-                    );
-                } else {
-                    composer_still_open = match ocr::verify_post_composer_content(&retry_state_page, &post.content) {
-                        Ok(still_present) => still_present,
-                        Err(error) => {
-                            automation::log_event(&format!(
-                                "[自动发帖] 补点后无法判断编辑器状态：{error:#}；不再点击"
-                            ));
-                            true
-                        }
-                    };
-                    if composer_still_open {
-                        automation::log_event("[自动发帖] 唯一一次补点后正文仍在编辑器，停止点击，等待结果核验");
-                    } else {
-                        automation::log_event("[自动发帖] 补点后编辑器正文已消失，继续检查发布成功提示");
-                    }
-                }
-            } else {
-                automation::log_event("[自动发帖] 编辑器仍存在但未能重新定位提交按钮，不进行补点");
-            }
-        } else if !published {
-            automation::log_event("[自动发帖] 首次点击后未再识别到原正文，可能已提交，继续核验成功状态");
-        }
-
-        // 若首次状态截图或补点后的截图已确认成功，跳过后续轮询；
-        // 否则最多再检查 5 次，识别到成功提示立即结束。
-        for attempt in 1..=5 {
-            if published {
-                break;
-            }
-            wait_or_cancel(cancel, Duration::from_millis(if attempt == 1 { 900 } else { 1200 }))?;
-            let result_page = capture_window(
+            let result_page = capture_desktop(
                 post.post_id,
-                &format!("after-submit-toast-check-{attempt:02}"),
+                &format!("after-submit-desktop-check-{attempt:02}"),
             )?;
+            last_result_page = Some(result_page.clone());
+
             match ocr::recognize_post_sent_toast(&result_page) {
                 Ok(true) => {
                     automation::log_event(&format!(
-                        "[自动发帖] 第 {attempt}/5 次识别到底部成功提示“你的贴已发送。查看”，确认发布成功"
+                        "[自动发帖] 第 {attempt}/6 次桌面截图识别到发布成功提示，确认发布成功；停止所有后续点击"
                     ));
-                    last_result_page = Some(result_page);
                     published = true;
                     break;
                 }
                 Ok(false) => {
                     automation::log_event(&format!(
-                        "[自动发帖] 第 {attempt}/5 次未识别到底部成功提示，继续等待；不会自动重发"
+                        "[自动发帖] 第 {attempt}/6 次桌面截图未识别到成功提示；不会再次点击发布"
                     ));
                 }
                 Err(error) => {
                     automation::log_event(&format!(
-                        "[自动发帖] 第 {attempt}/5 次底部提示 OCR 失败：{error:#}；继续检查，不会自动重发"
+                        "[自动发帖] 第 {attempt}/6 次成功提示 OCR 出错：{error:#}；继续桌面截图核验，不会再次点击发布"
                     ));
                 }
             }
-            last_result_page = Some(result_page);
         }
 
         let result_page = last_result_page
