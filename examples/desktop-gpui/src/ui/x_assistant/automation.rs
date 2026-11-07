@@ -548,18 +548,19 @@ pub(super) mod native {
         }
         anyhow::ensure!(rows == height, "读取屏幕截图像素失败");
         // GetDIBits 返回 32-bit BI_RGB 像素，内存通道顺序为 BGRA。
-        // 转成 RGBA 后再真正编码为 PNG，不能只把 BMP 数据写入 .png 文件。
+        // 转成 RGBA 后按调用方传入的 .bmp 路径真正编码为 BMP，
+        // 否则 image::open() 会因文件扩展名与实际 PNG 内容不一致而报 BMP signature not found。
         for pixel in pixels.chunks_exact_mut(4) {
             pixel.swap(0, 2);
             pixel[3] = 255;
         }
-        save_png(path, width, height, &pixels)
+        save_bmp(path, width, height, &pixels)
     }
 
-    fn save_png(path: &Path, width: i32, height: i32, pixels: &[u8]) -> anyhow::Result<()> {
+    fn save_bmp(path: &Path, width: i32, height: i32, pixels: &[u8]) -> anyhow::Result<()> {
         let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels.to_vec())
-            .ok_or_else(|| anyhow::anyhow!("创建 PNG 图像缓冲区失败"))?;
-        image.save_with_format(path, image::ImageFormat::Png)?;
+            .ok_or_else(|| anyhow::anyhow!("创建 BMP 图像缓冲区失败"))?;
+        image.save_with_format(path, image::ImageFormat::Bmp)?;
         Ok(())
     }
 }
