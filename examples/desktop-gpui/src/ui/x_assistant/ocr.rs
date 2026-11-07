@@ -129,10 +129,12 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
             let label_match = text.contains(&normalize_text("发帖"))
                 || text.contains(&normalize_text("发布"))
                 || text.contains("post");
+            // 发帖弹窗的按钮通常位于弹窗右下方，但不同窗口高度下
+            // 其相对位置可能高于回复弹窗按钮；按已采集的发帖截图覆盖 35%-90%。
             let in_button_zone = center_x >= crop.width as f32 * 0.60
                 && center_x <= crop.width as f32 * 0.98
-                && center_y >= crop.height as f32 * 0.55
-                && center_y <= crop.height as f32 * 0.98;
+                && center_y >= crop.height as f32 * 0.35
+                && center_y <= crop.height as f32 * 0.90;
             super::automation::log_event(&format!(
                 "[自动发帖 OCR] 弹窗提交按钮候选：模式={mode_name}，文本={:?}，局部坐标=({center_x:.0},{center_y:.0})，文字匹配={label_match}，按钮区域匹配={in_button_zone}",
                 line.text
