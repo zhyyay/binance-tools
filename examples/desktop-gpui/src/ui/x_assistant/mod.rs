@@ -378,53 +378,119 @@ impl XAssistantPage {
         cx.notify();
     }
 
-    fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = cx.theme();
-
-        let auto_reply_button = Button::new("x-task-auto-reply")
+    fn render_auto_reply_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        Button::new("x-task-auto-reply")
             .small()
             .outline()
-            .label(if self.task_settings.auto_reply_enabled { "自动回复调度：开" } else { "自动回复调度：关" })
+            .label(if self.task_settings.auto_reply_enabled {
+                "自动回复调度：开"
+            } else {
+                "自动回复调度：关"
+            })
             .when(self.task_settings.auto_reply_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoReply, cx)))
-            .into_any_element();
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::info!("X 任务设置：点击自动回复开关");
+                this.toggle_task_setting(TaskSetting::AutoReply, cx);
+            }))
+            .into_any_element()
+    }
 
-        let auto_post_button = Button::new("x-task-auto-post")
+    fn render_auto_post_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        Button::new("x-task-auto-post")
             .small()
             .outline()
-            .label(if self.task_settings.auto_post_enabled { "自动发帖：开" } else { "自动发帖：关" })
+            .label(if self.task_settings.auto_post_enabled {
+                "自动发帖：开"
+            } else {
+                "自动发帖：关"
+            })
             .when(self.task_settings.auto_post_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoPost, cx)))
-            .into_any_element();
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::info!("X 任务设置：点击自动发帖开关");
+                this.toggle_task_setting(TaskSetting::AutoPost, cx);
+            }))
+            .into_any_element()
+    }
 
-        let auto_comment_button = Button::new("x-task-auto-comment")
+    fn render_auto_comment_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        Button::new("x-task-auto-comment")
             .small()
             .outline()
-            .label(if self.task_settings.auto_comment_enabled { "发布后自动评论：开" } else { "发布后自动评论：关" })
+            .label(if self.task_settings.auto_comment_enabled {
+                "发布后自动评论：开"
+            } else {
+                "发布后自动评论：关"
+            })
             .when(self.task_settings.auto_comment_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::AutoComment, cx)))
-            .into_any_element();
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::info!("X 任务设置：点击自动评论开关");
+                this.toggle_task_setting(TaskSetting::AutoComment, cx);
+            }))
+            .into_any_element()
+    }
 
-        let own_post_reply_button = Button::new("x-task-own-post-reply")
+    fn render_own_post_reply_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        Button::new("x-task-own-post-reply")
             .small()
             .outline()
-            .label(if self.task_settings.own_post_reply_enabled { "回复自己帖子评论：开（预留）" } else { "回复自己帖子评论：关（预留）" })
+            .label(if self.task_settings.own_post_reply_enabled {
+                "回复自己帖子评论：开（预留）"
+            } else {
+                "回复自己帖子评论：关（预留）"
+            })
             .when(self.task_settings.own_post_reply_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_task_setting(TaskSetting::OwnPostReply, cx)))
-            .into_any_element();
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::info!("X 任务设置：点击回复自己帖子评论开关");
+                this.toggle_task_setting(TaskSetting::OwnPostReply, cx);
+            }))
+            .into_any_element()
+    }
 
-        let rate_minus_button = Button::new("x-task-post-rate-minus")
+    fn render_post_rate_controls(&self, cx: &mut Context<Self>) -> AnyElement {
+        let minus_button = Button::new("x-task-post-rate-minus")
             .small()
             .outline()
             .label("−")
-            .on_click(cx.listener(|this, _, _, cx| this.adjust_posts_per_hour(-1, cx)))
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::info!("X 任务设置：每小时发帖数量减一");
+                this.adjust_posts_per_hour(-1, cx);
+            }))
             .into_any_element();
-        let rate_plus_button = Button::new("x-task-post-rate-plus")
+
+        let plus_button = Button::new("x-task-post-rate-plus")
             .small()
             .outline()
             .label("+")
-            .on_click(cx.listener(|this, _, _, cx| this.adjust_posts_per_hour(1, cx)))
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::info!("X 任务设置：每小时发帖数量加一");
+                this.adjust_posts_per_hour(1, cx);
+            }))
             .into_any_element();
+
+        h_flex()
+            .items_center()
+            .gap_2()
+            .child(div().text_size(px(12.)).child("每小时发布数量"))
+            .child(minus_button)
+            .child(
+                div()
+                    .text_size(px(14.))
+                    .font_semibold()
+                    .child(format!("{} 条", self.task_settings.posts_per_hour)),
+            )
+            .child(plus_button)
+            .into_any_element()
+    }
+
+    fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 任务设置：开始渲染设置面板");
+        let theme = cx.theme();
+
+        let auto_reply_button = self.render_auto_reply_setting_button(cx);
+        let auto_post_button = self.render_auto_post_setting_button(cx);
+        let auto_comment_button = self.render_auto_comment_setting_button(cx);
+        let own_post_reply_button = self.render_own_post_reply_setting_button(cx);
+        let rate_controls = self.render_post_rate_controls(cx);
 
         let panel = v_flex()
             .gap_2()
@@ -453,20 +519,7 @@ impl XAssistantPage {
                     .child(auto_comment_button)
                     .child(own_post_reply_button),
             )
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_size(px(12.)).child("每小时发布数量"))
-                    .child(rate_minus_button)
-                    .child(
-                        div()
-                            .text_size(px(14.))
-                            .font_semibold()
-                            .child(format!("{} 条", self.task_settings.posts_per_hour)),
-                    )
-                    .child(rate_plus_button),
-            )
+            .child(rate_controls)
             .child(
                 div()
                     .text_size(px(11.))
@@ -474,6 +527,8 @@ impl XAssistantPage {
                     .child("设置会保存到本地数据库。自动发帖按工作区选择的新闻类型筛选候选，并遵守每小时发布上限。"),
             )
             .into_any_element();
+
+        app_log::info!("X 任务设置：设置面板构建完成");
         panel
     }
 
@@ -513,6 +568,7 @@ impl XAssistantPage {
     }
 
     fn open_task_settings(&mut self, cx: &mut Context<Self>) {
+        app_log::info!("X 任务设置：收到打开页面事件");
         self.show_reply_list = false;
         self.show_post_history = false;
         self.show_task_settings = true;
