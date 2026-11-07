@@ -60,10 +60,13 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
             let text = normalize_text(&line.text).to_lowercase();
             let x = (line.left + line.right) * 0.5 / doc.scale_x;
             let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
-            if x < width * 0.12
-                || x > width * 0.90
+            // 新建帖子弹窗位于页面中央。主页左侧导航、右侧推荐栏、
+            // 时间线正文中的相似文字都不能作为编辑框定位依据。
+            // 仅接受中央弹窗区域内的占位提示，坐标最终还会在 submit.rs 二次校验。
+            if x < width * 0.30
+                || x > width * 0.68
                 || y < height * 0.12
-                || y > height * 0.82
+                || y > height * 0.85
             {
                 return None;
             }
