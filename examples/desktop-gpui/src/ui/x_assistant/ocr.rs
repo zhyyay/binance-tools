@@ -212,14 +212,34 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
     let top = height * 70 / 100;
     let crop = crop_imm(&source, 0, top, width, height - top).to_image();
     let crop = image::DynamicImage::ImageRgba8(crop);
-    let doc = recognize_document_image(&crop, 4, 3, Some(200))?;
-    let recognized = doc.text.trim();
-    let matched = contains_sent_confirmation(recognized);
+
+    // X 的 toast 字体较小且背景可能随主题变化。单一阈值容易漏检，
+    // 因此使用多种 OCR 预处理；任意一种识别到明确成功文案即返回成功。
+    let modes = [
+        (4, 3, Some(200), "1.33x threshold-200"),
+        (2, 1, None, "2x grayscale"),
+        (2, 1, Some(220), "2x threshold-220"),
+        (3, 2, Some(180), "1.5x threshold-180"),
+    ];
+    let mut last_text = String::new();
+    for (scale_num, scale_den, threshold, mode) in modes {
+        let doc = recognize_document_image(&crop, scale_num, scale_den, threshold)?;
+        let recognized = doc.text.trim();
+        let matched = contains_sent_confirmation(recognized);
+        super::automation::log_event(&format!(
+            "[自动发帖 OCR] 底部发布提示识别（{mode}）：匹配={}，识别文本={:?}",
+            matched, recognized
+        ));
+        last_text = recognized.to_string();
+        if matched {
+            return Ok(true);
+        }
+    }
     super::automation::log_event(&format!(
-        "[自动发帖 OCR] 底部发布提示识别：匹配={}，识别文本={:?}",
-        matched, recognized
+        "[自动发帖 OCR] 多种预处理均未识别到成功提示，最后识别文本={:?}",
+        last_text
     ));
-    Ok(matched)
+    Ok(false)
 }
 
 fn doc_width(path: &Path) -> anyhow::Result<u32> {
