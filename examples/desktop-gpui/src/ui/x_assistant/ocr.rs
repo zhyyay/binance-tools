@@ -215,8 +215,9 @@ pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow
     ));
     Ok(false)
 }
-/// 只识别浏览器页面底部的 X 发布成功 toast，避免把正文中相似文字误判为成功。
-/// X 中文界面成功提示为“你的贴已发送。查看”；同时兼容“你的帖子已发送”等变体。
+/// 识别 X 发布成功 toast。
+/// X 的提示可能出现在页面底部左侧，不能只扫描中央区域；
+/// 因此覆盖截图底部全宽，并兼容中文、英文提示文本。
 pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
     use image::imageops::crop_imm;
 
@@ -225,21 +226,18 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
     let height = source.height();
     anyhow::ensure!(width >= 800 && height >= 600, "发布结果截图尺寸异常（{width}x{height}）");
 
-    // X 的成功提示是屏幕下方偏中间的蓝色浮层，不在整条底边。
-    // 只裁剪页面中下部的中央区域，减少 NFL/时间线/侧栏等文字干扰。
-    // 该比例同时适用于浏览器客户区截图和完整桌面截图。
-    let left = width * 25 / 100;
-    let right = width * 75 / 100;
-    let top = height * 70 / 100;
-    let bottom = height * 96 / 100;
-    let crop = crop_imm(&source, left, top, right - left, bottom - top).to_image();
+    // 旧实现只扫描 x=25%..75%、y=70%..96%，会漏掉位于左下方的 X toast，
+    // 也会漏掉贴近窗口底边的提示。新实现扫描整个底部 42% 区域。
+    let left = 0;
+    let top = height * 58 / 100;
+    let crop = crop_imm(&source, left, top, width, height - top).to_image();
     let crop = image::DynamicImage::ImageRgba8(crop);
 
-    // 先使用灰度放大识别；漏检时再尝试两种阈值，避免对整页做多轮 OCR。
+    // 蓝色提示在深色/浅色背景下对比度不同，保留灰度与多阈值识别。
     let modes = [
-        (2, 1, None, "2x grayscale"),
-        (3, 2, Some(180), "1.5x threshold-180"),
-        (2, 1, Some(220), "2x threshold-220"),
+        (3, 2, None, "1.5x grayscale"),
+        (2, 1, Some(160), "2x threshold-160"),
+        (2, 1, Some(210), "2x threshold-210"),
     ];
     let mut last_text = String::new();
     for (scale_num, scale_den, threshold, mode) in modes {
@@ -247,7 +245,7 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
         let recognized = doc.text.trim();
         let matched = contains_sent_confirmation(recognized);
         super::automation::log_event(&format!(
-            "[自动发帖 OCR] 中下部成功提示识别（{mode}）：匹配={}，识别文本={:?}",
+            "[自动发帖 OCR] 底部全宽成功提示识别（{mode}）：匹配={}，识别文本={:?}",
             matched, recognized
         ));
         last_text = recognized.to_string();
@@ -255,8 +253,9 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
             return Ok(true);
         }
     }
+
     super::automation::log_event(&format!(
-        "[自动发帖 OCR] 中下部区域未识别到成功提示，最后识别文本={:?}",
+        "[自动发帖 OCR] 底部全宽区域未识别到成功提示，最后识别文本={:?}",
         last_text
     ));
     Ok(false)
