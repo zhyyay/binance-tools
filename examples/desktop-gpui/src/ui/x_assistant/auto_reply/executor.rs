@@ -2,6 +2,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc::SyncSender,
     },
     thread,
     time::{Duration, Instant},
@@ -78,6 +79,7 @@ impl AutoReplyRunner {
         &mut self,
         options: VisionReplyOptions,
         cancel: &AtomicBool,
+        mut first_cycle_sender: Option<SyncSender<()>>,
     ) -> Result<VisionReplyResult> {
         let _watchdog = RuntimeWatchdog::start();
 
@@ -87,6 +89,11 @@ impl AutoReplyRunner {
             }
 
             let result = self.run_once(&options, cancel);
+
+            // 首轮回复已完成并释放浏览器租约后，通知自动发帖调度器可以加入。
+            if let Some(sender) = first_cycle_sender.take() {
+                let _ = sender.send(());
+            }
 
             // 用户取消优先于当前轮次产生的错误。
             if Self::is_cancelled(cancel) {
@@ -232,7 +239,19 @@ pub fn run(options: VisionReplyOptions, cancel: &AtomicBool) -> Result<VisionRep
     anyhow::ensure!(options.auto_send, "全自动回复需要开启自动发送");
     anyhow::ensure!(!options.hover_only, "全自动回复不能使用仅移动模式");
 
-    AutoReplyRunner::default().run(options, cancel)
+    AutoReplyRunner::default().run(options, cancel, None)
+}
+
+/// 自动化联动入口：首轮回复完成后通知外部调度器，再继续持续回复。
+pub fn run_with_first_cycle(
+    options: VisionReplyOptions,
+    cancel: &AtomicBool,
+    first_cycle_sender: SyncSender<()>,
+) -> Result<VisionReplyResult> {
+    anyhow::ensure!(options.auto_send, "全自动回复需要开启自动发送");
+    anyhow::ensure!(!options.hover_only, "全自动回复不能使用仅移动模式");
+
+    AutoReplyRunner::default().run(options, cancel, Some(first_cycle_sender))
 }
 
 /// 生成手动停止结果。
