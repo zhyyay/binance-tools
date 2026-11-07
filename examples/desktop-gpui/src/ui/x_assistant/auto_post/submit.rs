@@ -13,6 +13,7 @@ use std::{
 use anyhow::{Context, ensure};
 use super::content::PreparedPost;
 use crate::ui::x_assistant::{automation, ocr};
+use crate::ui::x_assistant::ocr_status::recognize_send_status;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmitOutcome {
@@ -264,40 +265,45 @@ pub fn submit_prepared_post(
         automation::native::click_at_client_position(submit_point.0, submit_point.1)?;
         automation::log_event("[自动发帖] 发帖按钮点击动作已执行，先检查编辑弹窗是否真正提交");
 
-        // 点击发布后不再尝试第二次点击：X 可能已经发布，只是成功 toast OCR 暂时漏检。
-        // 发布后的截图改为整个桌面截图，不依赖 GetForegroundWindow()；
-        // 即使用户切换到其他窗口，也不能因为 capture_window 前台校验失败而中断状态核验。
-        wait_or_cancel(cancel, Duration::from_millis(700))?;
+        // 点击发布后绝不再次点击。复用自动回复的整图 PP-OCR 状态识别：
+        // recognize_send_status -> recognize_document(4/3 放大、阈值 200) -> contains_sent_confirmation。
+        // 先等待 X 完成提交，再最多检查 3 张桌面截图；每次截图只执行一次 OCR。
+        wait_or_cancel(cancel, Duration::from_secs(2))?;
         let mut published = false;
         let mut last_result_page = None;
 
-        for attempt in 1..=6 {
+        for attempt in 1..=3 {
             check_cancel(cancel)?;
             if attempt > 1 {
-                wait_or_cancel(cancel, Duration::from_millis(700))?;
+                wait_or_cancel(cancel, Duration::from_secs(1))?;
             }
+
             let result_page = capture_desktop(
                 post.post_id,
-                &format!("after-submit-desktop-check-{attempt:02}"),
+                &format!("after-submit-status-check-{attempt:02}"),
             )?;
             last_result_page = Some(result_page.clone());
 
-            match ocr::recognize_post_sent_toast(&result_page) {
-                Ok(true) => {
+            match recognize_send_status(&result_page) {
+                Ok(status) => {
                     automation::log_event(&format!(
-                        "[自动发帖] 第 {attempt}/6 次桌面截图识别到发布成功提示，确认发布成功；停止所有后续点击"
+                        "[自动发帖] 第 {attempt}/3 次整图 PP-OCR 状态：sent={}，already_sent={}，rate_limited={}，retryable_error={}",
+                        status.sent,
+                        status.already_sent,
+                        status.rate_limited,
+                        status.retryable_error
                     ));
-                    published = true;
-                    break;
-                }
-                Ok(false) => {
-                    automation::log_event(&format!(
-                        "[自动发帖] 第 {attempt}/6 次桌面截图未识别到成功提示；不会再次点击发布"
-                    ));
+                    if status.sent {
+                        automation::log_event(&format!(
+                            "[自动发帖] 第 {attempt}/3 次复用自动回复的成功识别逻辑，识别到“你的贴已发送。查看”，确认发布成功；立即结束核验"
+                        ));
+                        published = true;
+                        break;
+                    }
                 }
                 Err(error) => {
                     automation::log_event(&format!(
-                        "[自动发帖] 第 {attempt}/6 次成功提示 OCR 出错：{error:#}；继续桌面截图核验，不会再次点击发布"
+                        "[自动发帖] 第 {attempt}/3 次整图 PP-OCR 状态识别失败：{error:#}；不会再次点击发布"
                     ));
                 }
             }
@@ -322,12 +328,12 @@ pub fn submit_prepared_post(
             })
         } else {
             let reason = format!(
-                "已点击发帖按钮，但连续 6 次桌面截图检查均未识别到中下部“你的贴已发送。查看”成功提示。最后截图：{}。发布结果不确定，禁止自动重发。",
+                "已点击发帖按钮，但连续 3 次整图 PP-OCR 状态检查均未识别到“你的贴已发送。查看”成功提示。最后截图：{}。发布结果不确定，禁止自动重发。",
                 result_page.display()
             );
             binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
             automation::log_event(&format!(
-                "[自动发帖] 流程结束：记录 ID={} 状态=Unknown；未识别到底部成功提示；最后截图={}",
+                "[自动发帖] 流程结束：记录 ID={} 状态=Unknown；未识别到整图发送成功状态；最后截图={}",
                 post.post_id, result_page.display()
             ));
             Ok(SubmitResult {
