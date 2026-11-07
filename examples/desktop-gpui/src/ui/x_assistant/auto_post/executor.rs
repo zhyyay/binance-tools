@@ -273,13 +273,50 @@ pub fn run_loop(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<u64> 
     }
 }
 
-/// 同时运行自动发帖与自动回复。两个循环各自只在单个浏览器动作期间持锁，
-/// 通过同一把 browser lease 串行访问 X 页面；任一循环遇到严重错误会停止另一循环。
+/// 启动时先完成一轮自动回复，再启动自动发帖循环。
+/// 两个循环随后通过同一把 browser lease 串行访问 X；任一循环遇到严重错误会停止另一循环。
 pub fn run_with_auto_reply(
     cancel: Arc<AtomicBool>,
     reply_options: crate::ui::x_assistant::vision::VisionReplyOptions,
     filter: NewsFilter,
 ) -> anyhow::Result<u64> {
+    // 先启动回复线程，但在首轮回复结束前不启动发帖线程。
+    let (first_cycle_sender, first_cycle_receiver) = std::sync::mpsc::sync_channel(1);
+    let reply_cancel = Arc::clone(&cancel);
+    let reply_worker = thread::spawn(move || {
+        let result = crate::ui::x_assistant::auto_reply::run_with_first_cycle(
+            reply_options,
+            &reply_cancel,
+            first_cycle_sender,
+        );
+        if result.is_err() {
+            reply_cancel.store(true, Ordering::Release);
+        }
+        result
+    });
+
+    let first_reply_completed = loop {
+        if cancel.load(Ordering::Acquire) {
+            break false;
+        }
+        match first_cycle_receiver.recv_timeout(Duration::from_millis(200)) {
+            Ok(()) => break true,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break false,
+        }
+    };
+
+    if !first_reply_completed {
+        return reply_worker
+            .join()
+            .map_err(|_| anyhow::anyhow!("自动回复工作线程异常退出"))?
+            .map(|_| 0);
+    }
+
+    crate::ui::x_assistant::automation::log_event(
+        "启动顺序：首轮自动回复已完成，现在开始安排自动发帖；后续任务串行交替执行。",
+    );
+
     let post_cancel = Arc::clone(&cancel);
     let post_worker = thread::spawn(move || {
         let result = run_loop(&post_cancel, filter);
@@ -289,9 +326,10 @@ pub fn run_with_auto_reply(
         result
     });
 
-    let reply_result = crate::ui::x_assistant::auto_reply::run(reply_options, &cancel);
-    let reply_failed = reply_result.is_err() && !cancel.load(Ordering::Acquire);
-    if reply_failed {
+    let reply_result = reply_worker
+        .join()
+        .map_err(|_| anyhow::anyhow!("自动回复工作线程异常退出"))?;
+    if reply_result.is_err() {
         cancel.store(true, Ordering::Release);
     }
 
@@ -302,9 +340,7 @@ pub fn run_with_auto_reply(
     match post_result {
         Err(error) => Err(error),
         Ok(published_count) => {
-            if reply_failed {
-                return reply_result.map(|_| published_count);
-            }
+            reply_result?;
             Ok(published_count)
         }
     }
