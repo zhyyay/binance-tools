@@ -163,39 +163,56 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
     );
     Ok(None)
 }
-/// 输入后必须能在截图 OCR 文本中匹配到正文，才允许继续提交。
+/// 只在 compose 弹窗内部核验正文，采用自动回复相同的局部裁剪与多模式 PP-OCR。
+/// 不扫描时间线，避免发布后正文出现在主页时被误认为编辑器仍然打开。
 pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow::Result<bool> {
-    use image::imageops::crop_imm;
-
-    let source = image::open(path)?;
-    let width = source.width();
-    let height = source.height();
-    anyhow::ensure!(width >= 800 && height >= 600, "发帖正文核验截图尺寸异常");
-
-    // 只检查屏幕中央的发帖编辑区域，避免提交后正文出现在时间线时，
-    // 被误判成编辑框仍然打开，从而触发重复点击。
-    let left = width * 20 / 100;
-    let right = width * 80 / 100;
-    let top = height * 8 / 100;
-    let bottom = height * 90 / 100;
-    let crop = crop_imm(&source, left, top, right - left, bottom - top).to_image();
-    let crop = image::DynamicImage::ImageRgba8(crop);
-    let doc = recognize_document_image(&crop, 2, 1, None)?;
+    let crop = crop_compose_dialog(path)?;
     let expected = normalize_text(content.split(" · ").next().unwrap_or(content)).to_lowercase();
-    let expected = expected.chars().take(32).collect::<String>();
-    if expected.chars().count() < 8 {
-        anyhow::bail!("待核验的发帖正文过短，不能可靠验证输入结果");
-    }
-    let recognized = normalize_text(&doc.text).to_lowercase();
-    let score = text_match_ratio(&recognized, &expected);
-    super::automation::log_event(&format!(
-        "[自动发帖 OCR] 编辑区域正文核验：匹配度={:.0}%，要求至少 75%；识别文本={:?}",
-        score * 100.0,
-        recognized
-    ));
-    Ok(score >= 0.75)
-}
+    let expected = expected.chars().take(48).collect::<String>();
+    anyhow::ensure!(
+        expected.chars().count() >= 8,
+        "待核验的发帖正文过短，不能可靠验证输入结果"
+    );
 
+    let modes = [
+        (4, 3, Some(200), "原始阈值 200"),
+        (2, 1, None, "2 倍灰度"),
+        (2, 1, Some(230), "2 倍阈值 230"),
+        (2, 1, Some(160), "2 倍阈值 160"),
+    ];
+    let mut best_score = 0.0_f32;
+    let mut best_text = String::new();
+
+    for (scale_num, scale_den, threshold, mode_name) in modes {
+        let doc = recognize_document_image(
+            &image::DynamicImage::ImageRgba8(crop.image.clone()),
+            scale_num,
+            scale_den,
+            threshold,
+        )?;
+        let recognized = normalize_text(&doc.text).to_lowercase();
+        let score = text_match_ratio(&recognized, &expected);
+        super::automation::log_event(&format!(
+            "[自动发帖 OCR] 弹窗正文核验（{mode_name}）：匹配度={:.0}%，要求至少 80%；识别文本={:?}",
+            score * 100.0,
+            recognized
+        ));
+        if score > best_score {
+            best_score = score;
+            best_text = recognized;
+        }
+        if score >= 0.80 {
+            return Ok(true);
+        }
+    }
+
+    super::automation::log_event(&format!(
+        "[自动发帖 OCR] 弹窗正文核验未通过：最高匹配度={:.0}%，最佳识别文本={:?}",
+        best_score * 100.0,
+        best_text
+    ));
+    Ok(false)
+}
 /// 只识别浏览器页面底部的 X 发布成功 toast，避免把正文中相似文字误判为成功。
 /// X 中文界面成功提示为“你的贴已发送。查看”；同时兼容“你的帖子已发送”等变体。
 pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
