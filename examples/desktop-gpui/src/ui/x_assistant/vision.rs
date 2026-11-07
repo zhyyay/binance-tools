@@ -501,7 +501,8 @@ fn run_visual_reply_inner(
     //wait_cancel(cancel, Duration::from_secs(5))?;
 
     if native::activate_browser().is_err() {
-        super::option::open_chrome()?;
+        // 自动回复必须从 X 首页开始；open_chrome() 是自动发帖专用入口，会打开 compose/post。
+        super::option::open_chrome_home()?;
         wait_cancel(cancel, Duration::from_secs(5))?;
     }
 
