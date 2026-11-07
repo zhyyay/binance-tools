@@ -164,7 +164,22 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
 
 /// 输入后必须能在截图 OCR 文本中匹配到正文，才允许继续提交。
 pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow::Result<bool> {
-    let doc = recognize_document(path)?;
+    use image::imageops::crop_imm;
+
+    let source = image::open(path)?;
+    let width = source.width();
+    let height = source.height();
+    anyhow::ensure!(width >= 800 && height >= 600, "发帖正文核验截图尺寸异常");
+
+    // 只检查屏幕中央的发帖编辑区域，避免提交后正文出现在时间线时，
+    // 被误判成编辑框仍然打开，从而触发重复点击。
+    let left = width * 20 / 100;
+    let right = width * 80 / 100;
+    let top = height * 8 / 100;
+    let bottom = height * 90 / 100;
+    let crop = crop_imm(&source, left, top, right - left, bottom - top).to_image();
+    let crop = image::DynamicImage::ImageRgba8(crop);
+    let doc = recognize_document_image(&crop, 2, 1, None)?;
     let expected = normalize_text(content.split(" · ").next().unwrap_or(content)).to_lowercase();
     let expected = expected.chars().take(32).collect::<String>();
     if expected.chars().count() < 8 {
@@ -173,8 +188,9 @@ pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow
     let recognized = normalize_text(&doc.text).to_lowercase();
     let score = text_match_ratio(&recognized, &expected);
     super::automation::log_event(&format!(
-        "[自动发帖 OCR] 正文输入核验：匹配度={:.0}%，要求至少 75%",
-        score * 100.0
+        "[自动发帖 OCR] 编辑区域正文核验：匹配度={:.0}%，要求至少 75%；识别文本={:?}",
+        score * 100.0,
+        recognized
     ));
     Ok(score >= 0.75)
 }
