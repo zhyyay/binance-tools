@@ -322,7 +322,7 @@ pub fn submit_prepared_post(
             })
         } else {
             let reason = format!(
-                "已点击发帖按钮，但连续 5 次检查均未识别到底部“你的贴已发送。查看”成功提示。最后截图：{}。发布结果不确定，禁止自动重发。",
+                "已点击发帖按钮，但连续 6 次桌面截图检查均未识别到中下部“你的贴已发送。查看”成功提示。最后截图：{}。发布结果不确定，禁止自动重发。",
                 result_page.display()
             );
             binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
