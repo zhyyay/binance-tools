@@ -35,9 +35,11 @@ pub(super) fn recognize_compose_reply_page(path: &Path) -> anyhow::Result<serde_
     with_cached_ocr_engine(|engine| engine.recognize_compose_reply_page(path))
 }
 
-/// 在 X 新发帖页面定位编辑区域。只接受 OCR 明确识别到的占位提示，
-/// 不使用固定屏幕坐标猜测输入框位置。
+/// 使用自动回复相同的弹窗局部 OCR 策略定位 X 发帖输入区域。
+/// 先裁剪中央 compose 弹窗，再用多种 PP-OCR 预处理识别占位提示，
+/// 并把局部坐标映射回原始截图；不再在整页坐标范围内搜索相似文字。
 pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(i32, i32)>> {
+    let crop = crop_compose_dialog(path)?;
     let expected = [
         normalize_text("What's happening?").to_lowercase(),
         normalize_text("What is happening?").to_lowercase(),
@@ -46,49 +48,62 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
         normalize_text("发布你的帖子"),
     ];
     let modes = [
-        (4, 3, Some(200)),
-        (2, 1, None),
-        (2, 1, Some(230)),
-        (2, 1, Some(160)),
+        (4, 3, Some(200), "原始阈值 200"),
+        (2, 1, None, "2 倍灰度"),
+        (2, 1, Some(230), "2 倍阈值 230"),
+        (2, 1, Some(160), "2 倍阈值 160"),
     ];
-    let width = doc_width(path)? as f32;
-    let height = doc_height(path)? as f32;
 
-    for (attempt, (scale_num, scale_den, threshold)) in modes.iter().enumerate() {
-        let doc = recognize_document_with_options(path, *scale_num, *scale_den, *threshold)?;
+    for (attempt, (scale_num, scale_den, threshold, mode_name)) in modes.iter().enumerate() {
+        let doc = recognize_document_image(
+            &image::DynamicImage::ImageRgba8(crop.image.clone()),
+            *scale_num,
+            *scale_den,
+            *threshold,
+        )?;
         let best = doc.lines.iter().filter_map(|line| {
-            let text = normalize_text(&line.text).to_lowercase();
-            let x = (line.left + line.right) * 0.5 / doc.scale_x;
-            let y = (line.top + line.bottom) * 0.5 / doc.scale_y;
-            // 新建帖子弹窗位于页面中央。主页左侧导航、右侧推荐栏、
-            // 时间线正文中的相似文字都不能作为编辑框定位依据。
-            // 仅接受中央弹窗区域内的占位提示，坐标最终还会在 submit.rs 二次校验。
-            if x < width * 0.30
-                || x > width * 0.68
-                || y < height * 0.12
-                || y > height * 0.85
+            let normalized = normalize_text(&line.text).to_lowercase();
+            let line_len = normalized.chars().count();
+            let center_x = (line.left + line.right) * 0.5 / doc.scale_x;
+            let center_y = (line.top + line.bottom) * 0.5 / doc.scale_y;
+            if line_len < 4
+                || line_len > 36
+                || center_x < crop.width as f32 * 0.10
+                || center_x > crop.width as f32 * 0.90
+                || center_y < crop.height as f32 * 0.10
+                || center_y > crop.height as f32 * 0.90
             {
                 return None;
             }
             let score = expected.iter()
-                .map(|phrase| text_match_ratio(&text, phrase))
+                .map(|phrase| text_match_ratio(&normalized, phrase))
                 .fold(0.0_f32, f32::max);
-            (score >= 0.72).then_some((x, y, score, line.text.as_str()))
+            (score >= 0.72).then_some((center_x, center_y, score, line.text.as_str()))
         }).max_by(|left, right| left.2.total_cmp(&right.2));
 
-        if let Some((x, y, score, recognized)) = best {
+        if let Some((center_x, center_y, score, recognized)) = best {
+            let point = (
+                (center_x + crop.left as f32).round() as i32,
+                (center_y + crop.top as f32).round() as i32,
+            );
             super::automation::log_event(&format!(
-                "[自动发帖 OCR] 编辑区域识别成功：文本={recognized:?}，匹配度={:.0}%，模式={}",
-                score * 100.0, attempt + 1
+                "[自动发帖 OCR] 弹窗局部输入框识别成功：模式={mode_name}，文本={recognized:?}，匹配度={:.0}%，客户区坐标=({}, {})",
+                score * 100.0, point.0, point.1
             ));
-            return Ok(Some((x.round() as i32, y.round() as i32)));
+            if attempt > 0 {
+                super::automation::log_event(&format!(
+                    "[自动发帖 OCR] 首选模式未命中，备用模式‘{mode_name}’识别成功"
+                ));
+            }
+            return Ok(Some(point));
         }
     }
 
-    super::automation::log_event("[自动发帖 OCR] 未识别到发帖编辑区，占位提示不明确，停止操作。");
+    super::automation::log_event(
+        "[自动发帖 OCR] compose 弹窗局部 OCR 未匹配到明确的发帖占位文字，停止操作",
+    );
     Ok(None)
 }
-
 /// 根据 compose 弹窗右下区域定位 Post/发帖按钮。
 /// 先裁剪弹窗右下区域并尝试多种 OCR 预处理，避免整页小字号按钮漏识别；
 /// 同时用坐标范围排除左侧导航栏的全局“发帖”入口。
