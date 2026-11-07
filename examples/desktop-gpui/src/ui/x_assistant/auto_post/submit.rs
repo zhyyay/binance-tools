@@ -270,17 +270,41 @@ pub fn submit_prepared_post(
         wait_or_cancel(cancel, Duration::from_millis(2200))?;
         let first_result_page = capture_window(post.post_id, "after-submit-state-check-01")?;
         let mut last_result_page = Some(first_result_page.clone());
-        let mut composer_still_open = match ocr::verify_post_composer_content(&first_result_page, &post.content) {
-            Ok(still_present) => still_present,
+
+        // 先检查明确的成功提示，再检查正文是否仍在编辑器。
+        // X 提交成功后会回到时间线，原正文可能出现在时间线上；
+        // 若先做正文匹配，会把时间线正文误判为编辑器仍打开，触发重复点击。
+        let mut published = match ocr::recognize_post_sent_toast(&first_result_page) {
+            Ok(true) => {
+                automation::log_event(
+                    "[自动发帖] 首次提交后截图已识别到底部“你的帖子已发送。查看”，立即确认成功，不再补点",
+                );
+                true
+            }
+            Ok(false) => false,
             Err(error) => {
                 automation::log_event(&format!(
-                    "[自动发帖] 首次点击后无法判断编辑器状态：{error:#}；不进行补点"
+                    "[自动发帖] 首次提交后成功提示 OCR 失败：{error:#}；继续检查编辑器状态"
                 ));
                 false
             }
         };
 
-        if composer_still_open {
+        let mut composer_still_open = if published {
+            false
+        } else {
+            match ocr::verify_post_composer_content(&first_result_page, &post.content) {
+                Ok(still_present) => still_present,
+                Err(error) => {
+                    automation::log_event(&format!(
+                        "[自动发帖] 首次点击后无法判断编辑器状态：{error:#}；不进行补点"
+                    ));
+                    false
+                }
+            }
+        };
+
+        if !published && composer_still_open {
             automation::log_event("[自动发帖] 首次点击后正文仍显示在编辑器，重新识别提交按钮，准备进行唯一一次安全补点");
             if let Some(retry_point) = ocr::locate_post_submit_button(&first_result_page)? {
                 ensure!(
@@ -299,31 +323,45 @@ pub fn submit_prepared_post(
                 wait_or_cancel(cancel, Duration::from_millis(2200))?;
                 let retry_state_page = capture_window(post.post_id, "after-submit-state-check-02")?;
                 last_result_page = Some(retry_state_page.clone());
-                composer_still_open = match ocr::verify_post_composer_content(&retry_state_page, &post.content) {
-                    Ok(still_present) => still_present,
-                    Err(error) => {
-                        automation::log_event(&format!(
-                            "[自动发帖] 补点后无法判断编辑器状态：{error:#}；不再点击"
-                        ));
-                        true
-                    }
-                };
-                if composer_still_open {
-                    automation::log_event("[自动发帖] 唯一一次补点后正文仍在编辑器，停止点击，等待结果核验");
+
+                // 补点后仍然先看成功 toast，避免再次把时间线正文当成编辑器正文。
+                published = matches!(
+                    ocr::recognize_post_sent_toast(&retry_state_page),
+                    Ok(true)
+                );
+                if published {
+                    automation::log_event(
+                        "[自动发帖] 补点后截图已识别到底部发布成功提示，立即停止后续点击与等待",
+                    );
                 } else {
-                    automation::log_event("[自动发帖] 补点后编辑器正文已消失，继续检查发布成功提示");
+                    composer_still_open = match ocr::verify_post_composer_content(&retry_state_page, &post.content) {
+                        Ok(still_present) => still_present,
+                        Err(error) => {
+                            automation::log_event(&format!(
+                                "[自动发帖] 补点后无法判断编辑器状态：{error:#}；不再点击"
+                            ));
+                            true
+                        }
+                    };
+                    if composer_still_open {
+                        automation::log_event("[自动发帖] 唯一一次补点后正文仍在编辑器，停止点击，等待结果核验");
+                    } else {
+                        automation::log_event("[自动发帖] 补点后编辑器正文已消失，继续检查发布成功提示");
+                    }
                 }
             } else {
                 automation::log_event("[自动发帖] 编辑器仍存在但未能重新定位提交按钮，不进行补点");
             }
-        } else {
+        } else if !published {
             automation::log_event("[自动发帖] 首次点击后未再识别到原正文，可能已提交，继续核验成功状态");
         }
 
-        // X 的成功 toast 会短暂显示在页面底部。分次截图并只 OCR 底部区域；
-        // 只有识别到“你的贴已发送。查看”一类明确提示才标记 Published。
-        let mut published = false;
+        // 若首次状态截图或补点后的截图已确认成功，跳过后续轮询；
+        // 否则最多再检查 5 次，识别到成功提示立即结束。
         for attempt in 1..=5 {
+            if published {
+                break;
+            }
             wait_or_cancel(cancel, Duration::from_millis(if attempt == 1 { 900 } else { 1200 }))?;
             let result_page = capture_window(
                 post.post_id,
