@@ -1,7 +1,7 @@
 use anyhow::{Context as AnyhowContext, bail};
 use browser_assistant_client::BrowserClient;
 use browser_core::BrowserCommand;
-use gpui::*;
+use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, Disableable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
@@ -195,53 +195,72 @@ impl BrowserAssistantPage {
         cx.notify();
 
         self._task = cx.spawn(async move |this, cx| {
-            let result = cx.background_spawn(async move {
-                let mut client = BrowserClient::connect()
-                    .context("连接失败：请确认 Chrome、扩展和 Native Host 已安装并运行")?;
-                let mut completed = 0usize;
-                for (index, step) in steps.iter().enumerate() {
-                    while pause.load(Ordering::Acquire) && !cancel.load(Ordering::Acquire) {
-                        std::thread::sleep(Duration::from_millis(150));
-                    }
-                    if cancel.load(Ordering::Acquire) {
-                        bail!("用户已停止任务");
-                    }
-                    let label = format!("步骤 {}/{}：{}", index + 1, steps.len(), step.name);
-                    let response = client.execute(step.command.clone())
-                        .with_context(|| format!("{label}执行失败"))?;
-                    if !response.ok {
-                        bail!("{}：{}", label, response.error.unwrap_or_else(|| "浏览器命令执行失败".into()));
-                    }
-                    completed += 1;
-                    let payload = response.result.unwrap_or(serde_json::Value::Null);
-                    let summary = serde_json::to_string(&payload).unwrap_or_else(|_| "操作成功".into());
-                    let _ = this.update(cx, |this, cx| {
-                        this.log(format!("{}：成功 {}", label, summary.chars().take(240).collect::<String>()));
-                        cx.notify();
-                    });
+            let mut completed = 0usize;
+            let mut failure: Option<String> = None;
+            for (index, step) in steps.iter().enumerate() {
+                while pause.load(Ordering::Acquire) && !cancel.load(Ordering::Acquire) {
+                    Timer::after(Duration::from_millis(150)).await;
                 }
-                Ok::<usize, anyhow::Error>(completed)
-            }).await;
+                if cancel.load(Ordering::Acquire) {
+                    failure = Some("用户已停止任务".into());
+                    break;
+                }
+                let label = format!("步骤 {}/{}：{}", index + 1, steps.len(), step.name);
+                let command = step.command.clone();
+                let result = cx.background_spawn(async move {
+                    let mut client = BrowserClient::connect()
+                        .context("连接失败：请确认 Chrome、扩展和 Native Host 已安装并运行")?;
+                    let response = client.execute(command)?;
+                    if !response.ok {
+                        bail!(response.error.unwrap_or_else(|| "浏览器命令执行失败".into()));
+                    }
+                    let payload = response.result.unwrap_or(serde_json::Value::Null);
+                    Ok::<String, anyhow::Error>(serde_json::to_string(&payload)?)
+                }).await;
+
+                match result {
+                    Ok(summary) => {
+                        completed += 1;
+                        let _ = this.update(cx, |this, cx| {
+                            this.log(format!("{}：成功 {}", label, summary.chars().take(240).collect::<String>()));
+                            cx.notify();
+                        });
+                    }
+                    Err(error) => {
+                        failure = Some(format!("{}：{error:#}", label));
+                        let message = failure.clone().unwrap_or_default();
+                        let _ = this.update(cx, |this, cx| {
+                            this.log(format!("{}：失败", label));
+                            this.error = Some(message);
+                            cx.notify();
+                        });
+                        break;
+                    }
+                }
+            }
 
             let _ = this.update(cx, |this, cx| {
                 this.busy = false;
                 this.paused = false;
                 this.pause.store(false, Ordering::Release);
-                match result {
-                    Ok(count) => {
-                        this.status = "任务完成".into();
-                        this.success_count += 1;
-                        let summary = format!("执行成功：完成 {count} 个步骤");
-                        this.log(&summary);
-                        this.history.insert(0, format!("{} | {}", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S"), summary));
-                    }
-                    Err(error) => {
+                if let Some(error) = failure {
+                    if error == "用户已停止任务" {
+                        this.status = "任务已停止".into();
+                        this.log("任务已按用户要求停止");
+                        this.history.insert(0, format!("{} | 已停止（完成 {completed} 个步骤）", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S")));
+                    } else {
                         this.status = "任务异常".into();
                         this.failed_count += 1;
-                        this.error = Some(format!("{error:#}"));
-                        this.log(format!("任务结束：{error:#}"));
-                        this.history.insert(0, format!("{} | 失败：{error:#}", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S")));
+                        this.error = Some(error.clone());
+                        this.log(format!("任务异常：{error}"));
+                        this.history.insert(0, format!("{} | 失败：{error}", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S")));
                     }
+                } else {
+                    this.status = "任务完成".into();
+                    this.success_count += 1;
+                    let summary = format!("执行成功：完成 {completed} 个步骤");
+                    this.log(&summary);
+                    this.history.insert(0, format!("{} | {}", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S"), summary));
                 }
                 if this.history.len() > 100 { this.history.truncate(100); }
                 cx.notify();
@@ -274,7 +293,7 @@ impl BrowserAssistantPage {
             .label(label)
             .small()
             .when(active, |button| button.primary())
-            .when(!active, |button| button.ghost())
+            .when(!active, |button| button.outline())
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.tab = tab;
                 cx.notify();
@@ -357,8 +376,6 @@ impl BrowserAssistantPage {
 
     fn render_tasks(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let selector = self.selector.read(cx).text().trim().to_string();
-        let text_value = self.text_input.read(cx).text().to_string();
         let mut content = v_flex().gap_3().size_full().min_h_0();
         content = content.child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
             .child(div().text_size(px(13.)).font_semibold().child("网页操作配置"))
