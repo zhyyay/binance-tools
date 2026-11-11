@@ -1055,33 +1055,41 @@ fn load_reply_rules() -> String {
 impl XAssistantPage {
     // 将每个按钮拆分到独立函数，避免在 GPUI render 回调中创建一个过大的临时栈帧。
     fn render_status_tab_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 辅助诊断：状态页签 - 读取选中状态");
         let selected = self.show_run_status;
+
+        app_log::info!("X 辅助诊断：状态页签 - 创建点击监听器");
+        let listener = cx.listener(|this, _, _, cx| {
+            // 每次打开运行状态页都重新读取当天（北京时间）的日志，
+            // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
+            this.log_tail = Some(run_log::LogTail::new());
+            this.show_run_status = true;
+            this.show_reply_list = false;
+            this.show_post_history = false;
+            this.show_task_settings = false;
+            this.show_auto_post = false;
+            cx.notify();
+        });
+
+        app_log::info!("X 辅助诊断：状态页签 - 点击监听器创建完成，创建按钮");
+        let button = Button::new("x-assistant-status-tab")
+            .ghost()
+            .small()
+            .label("全部日志")
+            .on_click(listener);
+
+        app_log::info!("X 辅助诊断：状态页签 - 按钮创建完成，创建选中指示线");
+        let indicator = div()
+            .w_full()
+            .h(px(2.))
+            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
+
+        app_log::info!("X 辅助诊断：状态页签 - 子元素创建完成，组装容器");
         v_flex()
             .w(px(112.))
             .gap_1()
-            .child(
-                Button::new("x-assistant-status-tab")
-                    .ghost()
-                    .small()
-                    .label("全部日志")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                // 每次打开运行状态页都重新读取当天（北京时间）的日志，
-                // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
-                this.log_tail = Some(run_log::LogTail::new());
-                this.show_run_status = true;
-                this.show_reply_list = false;
-                this.show_post_history = false;
-                this.show_task_settings = false;
-                this.show_auto_post = false;
-                cx.notify();
-            })),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(2.))
-                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            )
+            .child(button)
+            .child(indicator)
             .into_any_element()
     }
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
