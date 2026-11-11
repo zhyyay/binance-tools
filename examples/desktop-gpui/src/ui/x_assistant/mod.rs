@@ -1093,23 +1093,29 @@ impl XAssistantPage {
             .into_any_element()
     }
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        let selected = !self.show_run_status && !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post;
+        let selected = !self.show_run_status
+            && !self.show_reply_list
+            && !self.show_post_history
+            && !self.show_task_settings
+            && !self.show_auto_post;
+        let button = div()
+            .id("x-assistant-reply-flow-tab")
+            .w(px(112.))
+            .px_2()
+            .py_1()
+            .text_size(px(12.))
+            .text_color(palette::text(cx.theme()))
+            .child("自动回复")
+            .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx)));
+        let indicator = div()
+            .w_full()
+            .h(px(2.))
+            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
         v_flex()
             .w(px(112.))
             .gap_1()
-            .child(
-                Button::new("x-assistant-reply-flow-tab")
-                    .ghost()
-                    .small()
-                    .label("自动回复")
-                    .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(2.))
-                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            )
+            .child(button)
+            .child(indicator)
             .into_any_element()
     }
     fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
