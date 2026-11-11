@@ -31,7 +31,7 @@ use crate::ui::{
     },
     tools::DocumentConvertPage,
     wallet_generator::WalletGeneratorPage,
-    browser_assistant::BrowserAssistantPage,
+    browser::BrowserAssistantPage,
     x_assistant::XAssistantPage,
 };
 use gpui::{prelude::FluentBuilder, *};
