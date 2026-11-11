@@ -369,7 +369,7 @@ impl BrowserAssistantPage {
                 .child(Self::stat_card("Chrome / 当前标签页", self.status.clone(), palette::text(theme), theme))
                 .child(Self::stat_card("Native Host / IPC", if self.busy || self.status.contains("已连接") { "已响应".into() } else { "未检测".into() }, palette::text(theme), theme))
                 .child(Self::stat_card("执行状态", if self.paused { "已暂停".into() } else if self.busy { "运行中".into() } else { "空闲".into() }, palette::text(theme), theme)))
-            .child(div().text_size(px(13.)).font_semibold().child("今日执行统计"))
+            .child(div().text_size(px(13.)).font_semibold().child("本次运行统计"))
             .child(h_flex().gap_2()
                 .child(Self::stat_card("执行总数", total.to_string(), palette::text(theme), theme))
                 .child(Self::stat_card("成功", self.success_count.to_string(), gpui::hsla(0.39, 0.52, 0.34, 1.0), theme))
@@ -455,7 +455,7 @@ impl BrowserAssistantPage {
             })).into_any_element()
         };
         v_flex().size_full().min_h_0().gap_2()
-            .child(div().text_size(px(13.)).font_semibold().child("执行历史"))
+            .child(div().text_size(px(13.)).font_semibold().child("本次会话执行记录"))
             .child(v_flex().flex_1().min_h_0().overflow_y_scrollbar().child(rows))
             .into_any_element()
     }
