@@ -94,7 +94,9 @@ impl BrowserAssistantPage {
 
     fn log(&mut self, message: impl Into<String>) {
         let stamp = app_log::beijing_now().format("%H:%M:%S").to_string();
-        self.logs.push(format!("[{stamp}] {}", message.into()));
+        let message = message.into();
+        app_log::info!("[浏览器助手] {message}");
+        self.logs.push(format!("[{stamp}] {message}"));
         if self.logs.len() > 300 {
             let excess = self.logs.len() - 300;
             self.logs.drain(0..excess);
