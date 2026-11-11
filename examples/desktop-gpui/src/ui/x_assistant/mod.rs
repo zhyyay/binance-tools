@@ -81,6 +81,7 @@ pub struct XAssistantPage {
     task_finished: Arc<AtomicBool>,
     floating_status: Option<floating_status::FloatingStatus>,
     render_diagnostic_logged: bool,
+    render_count: u64,
     show_run_status: bool,
     log_tail: Option<run_log::LogTail>,
     _log_task: Task<()>,
@@ -169,6 +170,7 @@ impl XAssistantPage {
             task_finished: Arc::new(AtomicBool::new(true)),
             floating_status: None,
             render_diagnostic_logged: false,
+            render_count: 0,
             show_run_status: true,
             log_tail: None,
             _log_task: Task::ready(()),
@@ -1056,8 +1058,6 @@ impl XAssistantPage {
     // 将每个按钮拆分到独立函数，避免在 GPUI render 回调中创建一个过大的临时栈帧。
     fn render_status_tab_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_run_status;
-        app_log::info!("X 辅助诊断：状态页签 - 构建原生 div 点击区域");
-
         // 暂时绕过封装 Button：当前崩溃发生在将 Button 加入父容器时。
         // 使用 GPUI 原生 div 点击事件保留页签功能，便于确认是否为 Button 组件触发。
         let button = div()
@@ -1078,13 +1078,11 @@ impl XAssistantPage {
                 cx.notify();
             }));
 
-        app_log::info!("X 辅助诊断：状态页签 - 原生 div 点击区域创建完成");
         let indicator = div()
             .w_full()
             .h(px(2.))
             .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
 
-        app_log::info!("X 辅助诊断：状态页签 - 开始组装原生 div 容器");
         v_flex()
             .w(px(112.))
             .gap_1()
@@ -1348,6 +1346,19 @@ impl XAssistantPage {
 
 impl Render for XAssistantPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_count = self.render_count.saturating_add(1);
+        if self.render_count % 100 == 0 {
+            app_log::info!(
+                "X 辅助诊断：页面累计渲染 {} 次；replying={}，当前页面状态：运行状态={}，任务设置={}，自动发帖={}，回复历史={}，发帖历史={}",
+                self.render_count,
+                self.replying,
+                self.show_run_status,
+                self.show_task_settings,
+                self.show_auto_post,
+                self.show_reply_list,
+                self.show_post_history
+            );
+        }
         // 后台执行器已经返回但 UI 回调未能及时刷新时，以后台结束信号为准。
         if self.replying && self.task_finished.load(Ordering::Acquire) {
             self.floating_status.take();
