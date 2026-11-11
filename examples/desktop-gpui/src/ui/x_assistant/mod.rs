@@ -268,7 +268,7 @@ impl XAssistantPage {
                     if full_auto {
                         let mut client = BrowserClient::connect().map_err(|error| {
                             anyhow::anyhow!(
-                                "无法连接 Chrome 浏览器助手。请确认扩展已启用、Native Host 已安装；若刚安装扩展，请打开扩展弹窗连接一次。原始错误：{error:#}"
+                                "无法连接 Chrome 浏览器助手。请确认扩展已启用且 Native Host 已安装；若未安装，请运行 browser-assistant 仓库的 scripts/install-host.ps1。刚安装扩展时可打开扩展弹窗重新连接。原始错误：{error:#}"
                             )
                         })?;
                         let ping = client.execute(BrowserCommand::Ping)?;
@@ -304,6 +304,7 @@ impl XAssistantPage {
                 })
                 .await;
             if let Err(error) = browser_ready {
+                app_log::x_error!("自动回复启动前浏览器连接检查失败：{error:#}");
                 task_finished_for_ui.store(true, Ordering::Release);
                 _ = this.update(cx, |this, cx| {
                     this.replying = false;
