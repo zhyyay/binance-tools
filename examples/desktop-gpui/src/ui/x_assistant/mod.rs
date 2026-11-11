@@ -1084,13 +1084,18 @@ impl XAssistantPage {
             .h(px(2.))
             .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
 
-        app_log::info!("X 辅助诊断：状态页签 - 子元素创建完成，组装容器");
-        v_flex()
-            .w(px(112.))
-            .gap_1()
-            .child(button)
-            .child(indicator)
-            .into_any_element()
+        app_log::info!("X 辅助诊断：状态页签 - 子元素创建完成，开始创建容器");
+        let container = v_flex();
+        app_log::info!("X 辅助诊断：状态页签 - 容器创建完成，设置宽度和间距");
+        let container = container.w(px(112.)).gap_1();
+        app_log::info!("X 辅助诊断：状态页签 - 样式设置完成，添加按钮子元素");
+        let container = container.child(button);
+        app_log::info!("X 辅助诊断：状态页签 - 按钮子元素添加完成，添加指示线");
+        let container = container.child(indicator);
+        app_log::info!("X 辅助诊断：状态页签 - 子元素添加完成，转换为 AnyElement");
+        let element = container.into_any_element();
+        app_log::info!("X 辅助诊断：状态页签 - AnyElement 转换完成");
+        element
     }
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = !self.show_run_status && !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post;
