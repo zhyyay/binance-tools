@@ -1120,22 +1120,24 @@ impl XAssistantPage {
     }
     fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_auto_post;
+        let button = div()
+            .id("x-assistant-auto-post-tab")
+            .w(px(112.))
+            .px_2()
+            .py_1()
+            .text_size(px(12.))
+            .text_color(palette::text(cx.theme()))
+            .child("自动发帖")
+            .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx)));
+        let indicator = div()
+            .w_full()
+            .h(px(2.))
+            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
         v_flex()
             .w(px(112.))
             .gap_1()
-            .child(
-                Button::new("x-assistant-auto-post-tab")
-                    .ghost()
-                    .small()
-                    .label("自动发帖")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(2.))
-                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            )
+            .child(button)
+            .child(indicator)
             .into_any_element()
     }
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
