@@ -25,6 +25,7 @@ struct AutoReplyRunner {
     completed: usize,
     failures: usize,
     last_result: Option<VisionReplyResult>,
+    browser: super::browser::BrowserReplyRunner,
 }
 
 impl AutoReplyRunner {
@@ -120,29 +121,20 @@ impl AutoReplyRunner {
     ///
     /// 调用视觉识别模块，并根据执行结果分发处理。
     fn run_once(&mut self, options: &VisionReplyOptions, cancel: &AtomicBool) -> Result<()> {
-        run_browser_task(|| {
-            self.rounds += 1;
-            let round = self.rounds;
-            let started = Instant::now();
-            let _screenshot_round = match vision::begin_screenshot_round(round) {
-                Ok(guard) => guard,
-                Err(error) => {
-                    log_round_error(round, &error, cancel, started.elapsed());
-                    return self.handle_error(error, cancel);
-                }
-            };
-
-            match vision::run_visual_reply(options.clone(), cancel) {
-                Ok(result) => {
-                    log_round_result(round, &result, started.elapsed());
-                    self.handle_result(result, cancel)
-                }
-                Err(error) => {
-                    log_round_error(round, &error, cancel, started.elapsed());
-                    self.handle_error(error, cancel)
-                }
+        self.rounds += 1;
+        let round = self.rounds;
+        let started = Instant::now();
+        let result = run_browser_task(|| self.browser.run_once(options, cancel));
+        match result {
+            Ok(result) => {
+                log_round_result(round, &result, started.elapsed());
+                self.handle_result(result, cancel)
             }
-        })
+            Err(error) => {
+                log_round_error(round, &error, cancel, started.elapsed());
+                self.handle_error(error, cancel)
+            }
+        }
     }
 
     /// 处理正常返回的识图结果。
@@ -182,7 +174,7 @@ impl AutoReplyRunner {
     /// 滚动失败属于普通恢复错误：再尝试一次分类恢复，成功后回到主循环。
     /// 取消信号仍由底层检查并立即生效；恢复失败才向上返回错误。
     fn scroll_or_recover(&self, cancel: &AtomicBool, reason: &str) -> Result<()> {
-        match vision::scroll_to_next_post(cancel, reason) {
+        match super::browser::scroll_to_next_post(cancel, reason) {
             Ok(()) => Ok(()),
             Err(error) if Self::is_cancelled(cancel) => Err(error),
             Err(error) => {
@@ -205,7 +197,10 @@ impl AutoReplyRunner {
             return Ok(());
         }
 
-        if error.downcast_ref::<vision::RateLimitDetected>().is_some() {
+        if error.downcast_ref::<vision::RateLimitDetected>().is_some()
+            || format!("{error:#}").contains("PAGE_CHANGED")
+            || format!("{error:#}").contains("CHALLENGE_DETECTED")
+        {
             return Err(error).context(format!(
                 "检测到平台限流，全自动已停止；累计完成 {} 条回复",
                 self.completed
@@ -235,12 +230,11 @@ impl AutoReplyRunner {
     /// 帖子信息不完整时短距离补滚；
     /// 其他错误执行随机刷新或滚动。
     fn recover(&self, error: &anyhow::Error, cancel: &AtomicBool) -> Result<()> {
-        let recovery = if vision::is_incomplete_post_error(error) {
-            vision::scroll_down_to_complete_post(cancel, "帖子信息不完整，短距离补滚后重试")
-        } else {
-            vision::recover_by_error(cancel, error)
-        };
-        recovery.with_context(|| format!("全自动错误恢复失败；上一轮错误：{error:#}"))
+        super::browser::scroll_to_next_post(
+            cancel,
+            &format!("当前轮次出现异常，安全跳过并恢复时间线（{error:#}）"),
+        )
+        .with_context(|| format!("浏览器插件错误恢复失败；上一轮错误：{error:#}"))
     }
 
     /// 检查用户是否请求停止。
