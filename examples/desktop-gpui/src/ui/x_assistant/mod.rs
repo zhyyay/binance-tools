@@ -1168,16 +1168,24 @@ impl XAssistantPage {
 
     fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        Button::new("x-assistant-stop-all-automation")
-            .label("停止")
-            .small()
+        div()
+            .id("x-assistant-stop-all-automation")
             .rounded_full()
             .bg(palette::surface(theme))
-            .text_color(palette::text(theme))
+            .text_color(if self.replying {
+                palette::text(theme)
+            } else {
+                palette::muted(theme)
+            })
             .px_4()
-            .disabled(!self.replying)
-            .tooltip("中断自动化")
-            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
+            .py_1()
+            .text_size(px(12.))
+            .child("停止")
+            .when(self.replying, |button| {
+                button
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
+            })
             .into_any_element()
     }
 
