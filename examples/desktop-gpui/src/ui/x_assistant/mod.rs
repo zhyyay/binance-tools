@@ -811,9 +811,9 @@ impl XAssistantPage {
             }))
             .into_any_element();
 
-        let today_count = binance_tools::db::x_assistant::today_sent_reply_count_blocking()
-            .map(|count| count.to_string())
-            .unwrap_or_else(|_| "读取失败".to_string());
+        // render() 可能被 GPUI 高频调用；今日成功数已在页面初始化时缓存，
+        // 不要在渲染回调中同步访问 SQLite，避免阻塞 UI 线程。
+        let today_count = self.reply_today_success.to_string();
 
         v_flex()
             .gap_1()
