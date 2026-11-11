@@ -117,9 +117,9 @@ impl AutoReplyRunner {
         }
     }
 
-    /// 执行单轮视觉回复。
+    /// 执行单轮浏览器插件回复。
     ///
-    /// 调用视觉识别模块，并根据执行结果分发处理。
+    /// 由扩展读取 X 时间线并执行回复，Rust 负责 AI 生成和状态持久化。
     fn run_once(&mut self, options: &VisionReplyOptions, cancel: &AtomicBool) -> Result<()> {
         self.rounds += 1;
         let round = self.rounds;
@@ -137,7 +137,7 @@ impl AutoReplyRunner {
         }
     }
 
-    /// 处理正常返回的识图结果。
+    /// 处理浏览器插件返回的单轮结果。
     ///
     /// 重复账号跳过；成功则计数；未完成则累计失败。
     /// 最后滚动寻找下一条帖子。
@@ -197,12 +197,21 @@ impl AutoReplyRunner {
             return Ok(());
         }
 
-        if error.downcast_ref::<vision::RateLimitDetected>().is_some()
-            || format!("{error:#}").contains("PAGE_CHANGED")
-            || format!("{error:#}").contains("CHALLENGE_DETECTED")
+        let error_text = format!("{error:#}");
+        if error.downcast_ref::<vision::RateLimitDetected>().is_some() {
+            return Err(error).context(format!(
+                "检测到平台限流或安全验证，全自动已停止；累计完成 {} 条回复",
+                self.completed
+            ));
+        }
+        if error_text.contains("PAGE_CHANGED")
+            || error_text.contains("CHALLENGE_DETECTED")
+            || error_text.contains("Browser Assistant")
+            || error_text.contains("Native Host")
+            || error_text.contains("cannot connect to Browser Assistant")
         {
             return Err(error).context(format!(
-                "检测到平台限流，全自动已停止；累计完成 {} 条回复",
+                "浏览器插件连接或页面状态异常，自动回复已停止；累计完成 {} 条回复",
                 self.completed
             ));
         }
