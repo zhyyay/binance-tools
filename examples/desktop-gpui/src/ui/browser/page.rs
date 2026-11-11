@@ -119,7 +119,7 @@ impl Render for BrowserAssistantPage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let selector = {
-            let value = self.selector.read(cx).text().trim().to_string();
+            let value = self.selector.read(cx).text().to_string().trim().to_string();
             if value.is_empty() {
                 "body".to_string()
             } else {
@@ -309,7 +309,7 @@ impl Render for BrowserAssistantPage {
                         div()
                             .flex_1()
                             .min_h_0()
-                            .overflow_y_scroll()
+                            .overflow_y_scrollbar()
                             .rounded(px(6.))
                             .bg(palette::surface_strong(theme))
                             .p_3()
