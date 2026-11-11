@@ -112,8 +112,8 @@ impl BrowserReplyRunner {
             )?;
             binance_tools::db::x_assistant::save_reply_text_blocking(&run_id, &reply_text)?;
             // 提交前先持久化意图。提交后无论连接是否中断，都不能自动重发。
-            binance_tools::db::x_assistant::mark_reply_submitting_blocking(&run_id)?;
             check_cancel(cancel)?;
+            binance_tools::db::x_assistant::mark_reply_submitting_blocking(&run_id)?;
 
             automation::log_event(&format!(
                 "浏览器插件：回复内容已生成并保存，准备提交推文 ID={}。",
@@ -196,6 +196,10 @@ pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::
             "浏览器插件滚动失败：{}",
             response.error.unwrap_or_default()
         );
+        for _ in 0..8 {
+            check_cancel(cancel)?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
         Ok(())
     })
 }
