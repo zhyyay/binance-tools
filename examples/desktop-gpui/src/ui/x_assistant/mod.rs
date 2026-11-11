@@ -891,14 +891,22 @@ impl XAssistantPage {
 
         // 先创建需要可变借用 Context 的按钮，再读取主题，避免 cx 的借用冲突。
         let auto_reply_button = self.render_auto_reply_setting_button(cx);
+        app_log::x_info!("X 任务设置诊断：自动回复开关构建完成");
         let auto_post_button = self.render_auto_post_setting_button(cx);
+        app_log::x_info!("X 任务设置诊断：自动发帖开关构建完成");
         let auto_comment_button = self.render_auto_comment_setting_button(cx);
+        app_log::x_info!("X 任务设置诊断：自动评论开关构建完成");
         let own_post_reply_button = self.render_own_post_reply_setting_button(cx);
+        app_log::x_info!("X 任务设置诊断：回复自己帖子开关构建完成");
         let rate_controls = self.render_post_rate_controls(cx);
+        app_log::x_info!("X 任务设置诊断：每小时发帖控件构建完成");
         let daily_reply_controls = self.render_daily_reply_limit_controls(cx);
+        app_log::x_info!("X 任务设置诊断：每日回复限制控件构建完成");
         let minute_reply_controls = self.render_per_minute_reply_limit_controls(cx);
+        app_log::x_info!("X 任务设置诊断：每分钟回复限制控件构建完成");
 
         let theme = cx.theme();
+        app_log::x_info!("X 任务设置诊断：主题读取完成");
         let panel = v_flex()
             .gap_2()
             .rounded(px(10.))
