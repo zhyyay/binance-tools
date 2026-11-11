@@ -92,6 +92,54 @@ pub(super) mod native {
         )
     }
 
+    /// 检查 Chrome Native Messaging Host 是否已通过 install-host.ps1 注册。
+    /// 只检查安装状态，不启动 Host，也不主动连接 Chrome。
+    pub fn check_native_host_installed() -> anyhow::Result<()> {
+        use std::process::Command;
+
+        const HOST_NAME: &str = "com.zhyyay.browser_assistant";
+        const REGISTRY_KEY: &str = r"HKCU\Software\Google\Chrome\NativeMessagingHosts\com.zhyyay.browser_assistant";
+        let install_hint = "请先在 browser-assistant 项目目录执行 scripts/install-host.ps1 安装浏览器通信组件，然后重新点击开始。";
+
+        let output = Command::new("reg.exe")
+            .args(["query", REGISTRY_KEY, "/ve"])
+            .output()
+            .map_err(|error| anyhow::anyhow!("无法检查 Chrome Native Host 注册状态：{error}。{install_hint}"))?;
+        if !output.status.success() {
+            let message = String::from_utf8_lossy(&output.stderr);
+            app_log::x_error!("浏览器启动检查失败：未检测到 Chrome Native Messaging Host 注册项。{}", install_hint);
+            anyhow::bail!("未检测到 Chrome Native Messaging Host（{HOST_NAME}）。{install_hint} 注册表信息：{}", message.trim());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let manifest_path = stdout
+            .lines()
+            .find_map(|line| {
+                let (_, value) = line.split_once("REG_SZ")?;
+                let value = value.trim();
+                (!value.is_empty()).then(|| std::path::PathBuf::from(value))
+            })
+            .ok_or_else(|| anyhow::anyhow!("Chrome Native Host 注册项存在，但未找到 manifest 路径。请重新执行 install-host.ps1。"))?;
+
+        let manifest_text = std::fs::read_to_string(&manifest_path).map_err(|error| {
+            anyhow::anyhow!("Chrome Native Host manifest 不存在或无法读取：{}（{error}）。请重新执行 install-host.ps1。", manifest_path.display())
+        })?;
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_text)
+            .map_err(|error| anyhow::anyhow!("Chrome Native Host manifest 格式错误：{error}。请重新执行 install-host.ps1。"))?;
+        let host_path = manifest
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .filter(|path| !path.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("Chrome Native Host manifest 缺少有效的 path 字段。请重新执行 install-host.ps1。"))?;
+        anyhow::ensure!(
+            std::path::Path::new(host_path).is_file(),
+            "Chrome Native Host 可执行文件不存在：{host_path}。请重新编译 browser-assistant-host，并重新执行 install-host.ps1。"
+        );
+
+        app_log::x_info!("启动检查：Chrome Native Messaging Host 已安装，manifest={}，host={}", manifest_path.display(), host_path);
+        Ok(())
+    }
+
     /// 启动前严格确认 Google Chrome 可用，并将真正的 Chrome 窗口切到前台。
     /// 不会因为 Edge 等 Chromium 浏览器排在窗口枚举前面而误判。
     pub fn activate_chrome_browser() -> anyhow::Result<()> {
@@ -690,6 +738,9 @@ pub(super) mod native {
     use anyhow::bail;
     use std::path::Path;
 
+    pub fn check_native_host_installed() -> anyhow::Result<()> {
+        bail!("Chrome Native Messaging Host 安装检查仅支持 Windows")
+    }
     pub fn activate_chrome_browser() -> anyhow::Result<()> {
         bail!("X 辅助桌面控制仅支持 Windows")
     }
