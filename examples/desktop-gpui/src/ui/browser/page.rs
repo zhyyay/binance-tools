@@ -4,7 +4,7 @@ use browser_core::BrowserCommand;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Disableable, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::{Input, InputState},
     scroll::ScrollableElement,
