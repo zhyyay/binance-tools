@@ -1191,14 +1191,20 @@ impl XAssistantPage {
 
     fn render_reply_list_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_reply_list;
+        let theme = cx.theme();
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-reply-list-tab")
-                    .ghost()
-                    .small()
-                    .label("回复历史")
+                div()
+                    .id("x-assistant-reply-list-tab")
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .text_size(px(12.))
+                    .text_color(if selected { palette::text(theme) } else { palette::muted(theme) })
+                    .child("回复历史")
+                    .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
             )
             .child(
@@ -1211,14 +1217,20 @@ impl XAssistantPage {
     }
     fn render_post_history_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_post_history;
+        let theme = cx.theme();
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-post-history-tab")
-                    .ghost()
-                    .small()
-                    .label("发帖历史")
+                div()
+                    .id("x-assistant-post-history-tab")
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .text_size(px(12.))
+                    .text_color(if selected { palette::text(theme) } else { palette::muted(theme) })
+                    .child("发帖历史")
+                    .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx))),
             )
             .child(
@@ -1231,14 +1243,20 @@ impl XAssistantPage {
     }
     fn render_task_settings_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_task_settings;
+        let theme = cx.theme();
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-task-settings-tab")
-                    .ghost()
-                    .small()
-                    .label("设置")
+                div()
+                    .id("x-assistant-task-settings-tab")
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .text_size(px(12.))
+                    .text_color(if selected { palette::text(theme) } else { palette::muted(theme) })
+                    .child("设置")
+                    .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
             )
             .child(
@@ -1309,7 +1327,8 @@ impl XAssistantPage {
             })
             .into_any_element();
 
-        h_flex()
+        if diagnostic { app_log::info!("X 辅助诊断：开始组装顶部菜单布局"); }
+        let menu = h_flex()
             .items_end()
             .gap_2()
             .child(status_button)
@@ -1321,8 +1340,9 @@ impl XAssistantPage {
             .child(div().flex_1())
             .child(run_state)
             .child(start_all_button)
-            .child(stop_all_button)
-            .into_any_element()
+            .child(stop_all_button);
+        if diagnostic { app_log::info!("X 辅助诊断：顶部菜单布局组装完成"); }
+        menu.into_any_element()
     }
 }
 
