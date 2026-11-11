@@ -260,16 +260,6 @@ impl Render for DesktopTitleBar {
                             }),
                     )
                     .child(
-                        Button::new("browser-assistant-shortcut")
-                            .label("浏览器助手")
-                            .ghost()
-                            .xsmall()
-                            .on_click(|_, window, cx| {
-                                app_log::info!("[浏览器助手] 顶部导航按钮已点击，派发打开页面事件");
-                                window.dispatch_action(Box::new(OpenBrowserAssistant), cx);
-                            }),
-                    )
-                    .child(
                         Button::new("news-menu")
                             .label("新闻")
                             .ghost()
