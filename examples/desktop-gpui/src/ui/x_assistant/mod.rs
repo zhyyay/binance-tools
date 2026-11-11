@@ -1142,19 +1142,27 @@ impl XAssistantPage {
     }
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        Button::new("x-assistant-start-all-automation")
-            .label("开始")
-            .small()
+        div()
+            .id("x-assistant-start-all-automation")
             .rounded_full()
             .bg(palette::surface(theme))
-            .text_color(palette::text(theme))
+            .text_color(if self.replying {
+                palette::muted(theme)
+            } else {
+                palette::text(theme)
+            })
             .px_4()
-            .disabled(self.replying)
-            .tooltip("启动自动化回复、发帖")
-            .on_click(cx.listener(|this, _, _, cx| {
-                app_log::x_info!("[全局开始按钮] 点击事件已触发");
-                this.start_all_automation(cx);
-            }))
+            .py_1()
+            .text_size(px(12.))
+            .child("开始")
+            .when(!self.replying, |button| {
+                button
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        app_log::x_info!("[全局开始按钮] 点击事件已触发");
+                        this.start_all_automation(cx);
+                    }))
+            })
             .into_any_element()
     }
 
