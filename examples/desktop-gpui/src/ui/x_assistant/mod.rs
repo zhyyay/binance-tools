@@ -70,6 +70,13 @@ pub struct XAssistantPage {
     reply_list: Option<Entity<reply_list::ReplyListPage>>,
     post_history: Option<Entity<post_history::PostHistoryPage>>,
     task_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
+    // 统计数据在页面创建时读取并缓存，避免在 GPUI render 回调中执行同步数据库操作。
+    reply_today_total: u64,
+    reply_today_success: u64,
+    reply_today_failed: u64,
+    post_today_total: u64,
+    post_today_success: u64,
+    post_today_failed: u64,
     // 后台任务结束信号；用于兜底修正 UI 中可能滞留的运行状态。
     task_finished: Arc<AtomicBool>,
     floating_status: Option<floating_status::FloatingStatus>,
@@ -105,6 +112,30 @@ impl XAssistantPage {
         let task_settings = binance_tools::db::x_posting::load_task_settings_blocking()
             .unwrap_or_default();
 
+        // 数据库读取放在页面初始化阶段，不要放进 render()；GPUI 可能高频调用 render。
+        let reply_stats = binance_tools::db::x_assistant::reply_stats_blocking().ok();
+        let reply_today_total = reply_stats.as_ref().map_or(0, |stats| stats.today_total);
+        let reply_today_success = reply_stats.as_ref().map_or(0, |stats| stats.today_success);
+        let reply_today_failed = reply_stats.as_ref().map_or(0, |stats| stats.today_failed);
+
+        let published_posts =
+            binance_tools::db::x_posting::list_published_posts_blocking(500).unwrap_or_default();
+        let today = app_log::beijing_now().format("%Y-%m-%d").to_string();
+        let mut post_today_total = 0;
+        let mut post_today_success = 0;
+        let mut post_today_failed = 0;
+        for post in &published_posts {
+            let timestamp = post.published_at.as_deref().unwrap_or(&post.created_at);
+            if app_log::format_beijing_timestamp(timestamp).starts_with(&today) {
+                post_today_total += 1;
+                match post.status.as_str() {
+                    "published" => post_today_success += 1,
+                    "failed" => post_today_failed += 1,
+                    _ => {}
+                }
+            }
+        }
+
         Self {
             window_handle: window.window_handle(),
             replying: false,
@@ -129,6 +160,12 @@ impl XAssistantPage {
             reply_list: None,
             post_history: None,
             task_settings,
+            reply_today_total,
+            reply_today_success,
+            reply_today_failed,
+            post_today_total,
+            post_today_success,
+            post_today_failed,
             task_finished: Arc::new(AtomicBool::new(true)),
             floating_status: None,
             render_diagnostic_logged: false,
@@ -1258,24 +1295,34 @@ impl Render for XAssistantPage {
                 self.status = Some("自动化任务已结束。".to_string());
             }
         }
-        if !self.render_diagnostic_logged {
+        let first_render = !self.render_diagnostic_logged;
+        if first_render {
             self.render_diagnostic_logged = true;
+            app_log::info!(
+                "X 辅助诊断：首次进入 XAssistantPage::render，show_run_status={}，show_task_settings={}，show_auto_post={}，show_reply_list={}，show_post_history={}",
+                self.show_run_status,
+                self.show_task_settings,
+                self.show_auto_post,
+                self.show_reply_list,
+                self.show_post_history
+            );
         }
         if self.show_run_status {
+            if first_render {
+                app_log::info!("X 辅助诊断：首次渲染运行状态页，开始构建顶部菜单");
+            }
             let menu = self.render_page_menu(cx);
+            if first_render {
+                app_log::info!("X 辅助诊断：运行状态页顶部菜单构建完成");
+            }
             let theme = cx.theme();
             let logs = self.log_tail.as_ref().map(run_log::LogTail::lines).unwrap_or(&[]);
-            let reply_stats = binance_tools::db::x_assistant::reply_stats_blocking().ok();
-            let published_posts = binance_tools::db::x_posting::list_published_posts_blocking(500)
-                .unwrap_or_default();
-            let today = app_log::beijing_now().format("%Y-%m-%d").to_string();
-            let today_posts = published_posts.iter().filter(|post| {
-                let timestamp = post.published_at.as_deref().unwrap_or(&post.created_at);
-                app_log::format_beijing_timestamp(timestamp).starts_with(&today)
-            }).collect::<Vec<_>>();
-            let post_total = today_posts.len() as u64;
-            let post_success = today_posts.iter().filter(|post| post.status == "published").count() as u64;
-            let post_failed = today_posts.iter().filter(|post| post.status == "failed").count() as u64;
+            let post_total = self.post_today_total;
+            let post_success = self.post_today_success;
+            let post_failed = self.post_today_failed;
+            if first_render {
+                app_log::info!("X 辅助诊断：运行状态页统计数据已从缓存读取，开始构建内容区域");
+            }
             let stat = |label: &'static str, value: u64, color: gpui::Hsla, label_color: gpui::Hsla, background: gpui::Hsla| {
                 div().flex_1().min_w_0().rounded(px(7.)).border_1()
                     .border_color(background).bg(background)
@@ -1301,9 +1348,9 @@ impl Render for XAssistantPage {
             let reply_stats_panel = v_flex().flex_1().min_w_0().gap_2()
                 .child(div().text_size(px(13.)).font_semibold().child("自动回复统计"))
                 .child(h_flex().gap_2()
-                    .child(stat("今日总数", reply_stats.as_ref().map_or(0, |v| v.today_total), gpui::hsla(0.59, 0.75, 0.34, 1.0), gpui::hsla(0.59, 0.48, 0.43, 1.0), gpui::hsla(0.59, 0.72, 0.95, 1.0)))
-                    .child(stat("成功", reply_stats.as_ref().map_or(0, |v| v.today_success), gpui::hsla(0.39, 0.52, 0.34, 1.0), gpui::hsla(0.39, 0.38, 0.42, 1.0), gpui::hsla(0.39, 0.42, 0.94, 1.0)))
-                    .child(stat("失败", reply_stats.as_ref().map_or(0, |v| v.today_failed), gpui::hsla(0.00, 0.62, 0.42, 1.0), gpui::hsla(0.00, 0.45, 0.48, 1.0), gpui::hsla(0.00, 0.72, 0.95, 1.0))));
+                    .child(stat("今日总数", self.reply_today_total, gpui::hsla(0.59, 0.75, 0.34, 1.0), gpui::hsla(0.59, 0.48, 0.43, 1.0), gpui::hsla(0.59, 0.72, 0.95, 1.0)))
+                    .child(stat("成功", self.reply_today_success, gpui::hsla(0.39, 0.52, 0.34, 1.0), gpui::hsla(0.39, 0.38, 0.42, 1.0), gpui::hsla(0.39, 0.42, 0.94, 1.0)))
+                    .child(stat("失败", self.reply_today_failed, gpui::hsla(0.00, 0.62, 0.42, 1.0), gpui::hsla(0.00, 0.45, 0.48, 1.0), gpui::hsla(0.00, 0.72, 0.95, 1.0))));
             let post_stats_panel = v_flex().flex_1().min_w_0().gap_2()
                 .child(div().text_size(px(13.)).font_semibold().child("自动发帖统计"))
                 .child(h_flex().gap_2()
@@ -1317,6 +1364,9 @@ impl Render for XAssistantPage {
             // 避免用户只能通过日志文件发现任务未启动的原因。
             let runtime_notice = self.error.clone().or_else(|| self.status.clone());
             let runtime_notice_is_error = self.error.is_some();
+            if first_render {
+                app_log::info!("X 辅助诊断：运行状态页内容树构建完成，即将返回 GPUI");
+            }
             return v_flex().size_full().min_w_0().min_h_0().gap_3().p_4()
                 .child(menu)
                 .when_some(runtime_notice, |panel, message| {
