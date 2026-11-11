@@ -27,10 +27,11 @@ use crate::ui::{
         OpenAlphaTokens, OpenCalculator, OpenCryptoNews, OpenEntertainmentNews, OpenDailyMaSignals, OpenDocumentConvert,
         OpenMarketHeatmap, OpenMarketProducts, OpenSpotBacktest, OpenSpotSymbols,
         OpenSquareKeySettings, OpenSquareSendLogs, OpenSquareTasks, OpenStrategyHelp,
-        OpenTaskBoard, OpenWalletGenerator, OpenXAssistant,
+        OpenTaskBoard, OpenWalletGenerator, OpenXAssistant, OpenBrowserAssistant,
     },
     tools::DocumentConvertPage,
     wallet_generator::WalletGeneratorPage,
+    browser_assistant::BrowserAssistantPage,
     x_assistant::XAssistantPage,
 };
 use gpui::{prelude::FluentBuilder, *};
@@ -66,6 +67,7 @@ pub struct Dashboard {
     task_board_page: Option<Entity<TaskBoardPage>>,
     strategy_help_page: Option<Entity<StrategyHelpPage>>,
     x_assistant_page: Option<Entity<XAssistantPage>>,
+    browser_assistant_page: Option<Entity<BrowserAssistantPage>>,
     wallet_generator_page: Option<Entity<WalletGeneratorPage>>,
     active_page: ActivePage,
     /// Current proportional width of the AI chat panel.
@@ -102,6 +104,7 @@ enum ActivePage {
     TaskBoard,
     StrategyHelp,
     XAssistant,
+    BrowserAssistant,
     WalletGenerator,
 }
 
@@ -147,6 +150,7 @@ impl Dashboard {
             task_board_page: None,
             strategy_help_page: None,
             x_assistant_page: None,
+            browser_assistant_page: None,
             wallet_generator_page: None,
             active_page: ActivePage::MarketProducts,
             chat_panel_ratio: CHAT_PANEL_DEFAULT_RATIO,
@@ -531,6 +535,19 @@ impl Dashboard {
         app_log::info!("X 辅助诊断：页面切换完成，通知窗口刷新");
         cx.notify();
         app_log::info!("X 辅助诊断：打开页面事件处理完成");
+    }
+
+    fn on_open_browser_assistant(
+        &mut self,
+        _: &OpenBrowserAssistant,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.browser_assistant_page.is_none() {
+            self.browser_assistant_page = Some(cx.new(|cx| BrowserAssistantPage::new(window, cx)));
+        }
+        self.activate_page(ActivePage::BrowserAssistant, cx);
+        cx.notify();
     }
 
     fn on_open_wallet_generator(
@@ -1082,6 +1099,18 @@ impl Dashboard {
                         .into_any_element()
                 })
                 .unwrap_or_else(|| div().into_any_element()),
+            ActivePage::BrowserAssistant => self
+                .browser_assistant_page
+                .as_ref()
+                .map(|page| {
+                    div()
+                        .flex_1()
+                        .size_full()
+                        .p_6()
+                        .child(page.clone())
+                        .into_any_element()
+                })
+                .unwrap_or_else(|| div().into_any_element()),
             ActivePage::WalletGenerator => self
                 .wallet_generator_page
                 .as_ref()
@@ -1163,6 +1192,7 @@ impl Render for Dashboard {
             .on_action(cx.listener(Self::on_open_task_board))
             .on_action(cx.listener(Self::on_open_strategy_help))
             .on_action(cx.listener(Self::on_open_x_assistant))
+            .on_action(cx.listener(Self::on_open_browser_assistant))
             .on_action(cx.listener(Self::on_open_wallet_generator))
             .when(self.dragging_sash, |parent| {
                 parent

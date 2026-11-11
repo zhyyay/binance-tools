@@ -218,7 +218,7 @@ impl Render for ReplyListPage {
                                 v_flex()
                                     .gap_1()
                                     .child(
-                                        div().text_size(px(16.)).font_semibold().child("回复列表"),
+                                        div().text_size(px(16.)).font_semibold().child("回复历史"),
                                     )
                                     .child(
                                         div()

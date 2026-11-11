@@ -49,6 +49,10 @@ impl AutoReplyRunner {
             }
 
             ensure_daily_reply_capacity()?;
+            wait_for_minute_reply_capacity(cancel)?;
+            if Self::is_cancelled(cancel) {
+                return self.stop();
+            }
 
             let completed_before = self.completed;
             let result = self.run_once(&options, cancel);
@@ -305,6 +309,37 @@ fn log_round_error(
 /// 将错误或摘要压成单行，避免换行破坏日志检索。
 fn compact_log_value(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Enforces a rolling 60-second successful-send limit. When the limit is
+/// reached, the worker waits until the oldest successful reply leaves the window.
+fn wait_for_minute_reply_capacity(cancel: &AtomicBool) -> Result<()> {
+    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
+    let limit = settings.per_minute_reply_limit.clamp(1, 60);
+    let mut waiting_logged = false;
+
+    loop {
+        if cancel.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        match binance_tools::db::x_assistant::reply_capacity_wait_seconds_blocking(limit)? {
+            Some(seconds) => {
+                if !waiting_logged {
+                    automation::log_event(&format!(
+                        "已达到每分钟最大回复数量 {limit} 条，等待发送窗口释放后继续。"
+                    ));
+                    waiting_logged = true;
+                }
+                std::thread::sleep(Duration::from_secs(seconds.min(1).max(1)));
+            }
+            None => {
+                if waiting_logged {
+                    automation::log_event("每分钟回复额度已恢复，继续处理下一条帖子。");
+                }
+                return Ok(());
+            }
+        }
+    }
 }
 
 fn ensure_daily_reply_capacity() -> Result<()> {

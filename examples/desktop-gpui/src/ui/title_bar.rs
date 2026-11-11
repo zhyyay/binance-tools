@@ -26,6 +26,7 @@ actions!(
         OpenSpotSymbols,
         OpenWalletGenerator,
         OpenXAssistant,
+        OpenBrowserAssistant,
         OpenSquareKeySettings,
         OpenSquareSendLogs,
         OpenSquareTasks,
@@ -241,7 +242,15 @@ impl Render for DesktopTitleBar {
                                 )
                                 .item(
                                     PopupMenuItem::element(|_, _| {
-                                        div().text_size(px(11.)).child("X辅助")
+                                        div().text_size(px(11.)).child("浏览器助手")
+                                    })
+                                    .on_click(|_, window, cx| {
+                                        window.dispatch_action(Box::new(OpenBrowserAssistant), cx);
+                                    }),
+                                )
+                                .item(
+                                    PopupMenuItem::element(|_, _| {
+                                        div().text_size(px(11.)).child("X 自动化")
                                     })
                                     .on_click(|_, window, cx| {
                                         window.dispatch_action(Box::new(OpenXAssistant), cx);

@@ -613,6 +613,12 @@ impl XAssistantPage {
         self.persist_task_settings(cx);
     }
 
+    fn adjust_per_minute_reply_limit(&mut self, delta: i8, cx: &mut Context<Self>) {
+        let next = i16::from(self.task_settings.per_minute_reply_limit) + i16::from(delta);
+        self.task_settings.per_minute_reply_limit = next.clamp(1, 60) as u8;
+        self.persist_task_settings(cx);
+    }
+
     fn persist_task_settings(&mut self, cx: &mut Context<Self>) {
         match binance_tools::db::x_posting::save_task_settings_blocking(&self.task_settings) {
             Ok(()) => {
@@ -780,6 +786,52 @@ impl XAssistantPage {
             .into_any_element()
     }
 
+    fn render_per_minute_reply_limit_controls(&self, cx: &mut Context<Self>) -> AnyElement {
+        let minus_button = Button::new("x-task-minute-reply-limit-minus")
+            .small()
+            .outline()
+            .label("−")
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::x_info!("X 任务设置：每分钟最大回复数减一");
+                this.adjust_per_minute_reply_limit(-1, cx);
+            }))
+            .into_any_element();
+
+        let plus_button = Button::new("x-task-minute-reply-limit-plus")
+            .small()
+            .outline()
+            .label("+")
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::x_info!("X 任务设置：每分钟最大回复数加一");
+                this.adjust_per_minute_reply_limit(1, cx);
+            }))
+            .into_any_element();
+
+        v_flex()
+            .gap_1()
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(div().text_size(px(12.)).child("每分钟最大回复数量"))
+                    .child(minus_button)
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_semibold()
+                            .child(format!("{} 条", self.task_settings.per_minute_reply_limit)),
+                    )
+                    .child(plus_button),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(palette::muted(cx.theme()))
+                    .child("按滚动 60 秒窗口统计成功发送的回复；达到上限后自动等待额度恢复，不会停止全天任务。"),
+            )
+            .into_any_element()
+    }
+
     fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         app_log::x_info!("X 任务设置：开始渲染设置面板");
 
@@ -790,6 +842,7 @@ impl XAssistantPage {
         let own_post_reply_button = self.render_own_post_reply_setting_button(cx);
         let rate_controls = self.render_post_rate_controls(cx);
         let daily_reply_controls = self.render_daily_reply_limit_controls(cx);
+        let minute_reply_controls = self.render_per_minute_reply_limit_controls(cx);
 
         let theme = cx.theme();
         let panel = v_flex()
@@ -820,6 +873,7 @@ impl XAssistantPage {
                     .child(own_post_reply_button),
             )
             .child(rate_controls)
+            .child(minute_reply_controls)
             .child(daily_reply_controls)
             .child(
                 div()
@@ -957,7 +1011,7 @@ impl XAssistantPage {
                 Button::new("x-assistant-status-tab")
                     .ghost()
                     .small()
-                    .label("运行状态")
+                    .label("全部日志")
                     .on_click(cx.listener(|this, _, _, cx| {
                 // 每次打开运行状态页都重新读取当天（北京时间）的日志，
                 // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
@@ -1060,7 +1114,7 @@ impl XAssistantPage {
                 Button::new("x-assistant-reply-list-tab")
                     .ghost()
                     .small()
-                    .label("回复列表")
+                    .label("回复历史")
                     .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
             )
             .child(
@@ -1100,7 +1154,7 @@ impl XAssistantPage {
                 Button::new("x-assistant-task-settings-tab")
                     .ghost()
                     .small()
-                    .label("任务设置")
+                    .label("设置")
                     .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
             )
             .child(

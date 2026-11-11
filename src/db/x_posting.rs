@@ -12,6 +12,8 @@ pub struct XAssistantTaskSettings {
     pub posts_per_hour: u8,
     /// Maximum confirmed X replies per Beijing calendar day.
     pub daily_reply_limit: u16,
+    /// Maximum confirmed X replies in a rolling 60-second window.
+    pub per_minute_reply_limit: u8,
     /// crypto | entertainment | all
     pub auto_post_news_type: String,
 }
@@ -25,6 +27,7 @@ impl Default for XAssistantTaskSettings {
             own_post_reply_enabled: false,
             posts_per_hour: 3,
             daily_reply_limit: 1000,
+            per_minute_reply_limit: 5,
             auto_post_news_type: "all".to_string(),
         }
     }
@@ -86,6 +89,7 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
             posts_per_hour INTEGER NOT NULL DEFAULT 3 CHECK (posts_per_hour BETWEEN 1 AND 10),
             auto_post_news_type TEXT NOT NULL DEFAULT 'all',
             daily_reply_limit INTEGER NOT NULL DEFAULT 1000,
+            per_minute_reply_limit INTEGER NOT NULL DEFAULT 5 CHECK (per_minute_reply_limit BETWEEN 1 AND 60),
             updated_at TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
         );
 
@@ -166,6 +170,20 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
         connection.execute(
             "ALTER TABLE x_assistant_task_settings
              ADD COLUMN daily_reply_limit INTEGER NOT NULL DEFAULT 1000",
+            [],
+        )?;
+    }
+    let has_per_minute_reply_limit = {
+        let mut statement = connection.prepare("PRAGMA table_info(x_assistant_task_settings)")?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+        columns.collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "per_minute_reply_limit")
+    };
+    if !has_per_minute_reply_limit {
+        connection.execute(
+            "ALTER TABLE x_assistant_task_settings
+             ADD COLUMN per_minute_reply_limit INTEGER NOT NULL DEFAULT 5",
             [],
         )?;
     }
@@ -271,7 +289,7 @@ pub fn load_task_settings_blocking() -> anyhow::Result<XAssistantTaskSettings> {
         .query_row(
             "SELECT auto_reply_enabled, auto_post_enabled, auto_comment_enabled,
                     own_post_reply_enabled, posts_per_hour, auto_post_news_type,
-                    daily_reply_limit
+                    daily_reply_limit, per_minute_reply_limit
              FROM x_assistant_task_settings WHERE id = 1",
             [],
             |row| {
@@ -287,6 +305,7 @@ pub fn load_task_settings_blocking() -> anyhow::Result<XAssistantTaskSettings> {
                         _ => "all".to_string(),
                     },
                     daily_reply_limit: row.get::<_, i64>(6)?.clamp(100, 2_000) as u16,
+                    per_minute_reply_limit: row.get::<_, i64>(7)?.clamp(1, 60) as u8,
                 })
             },
         )
@@ -298,6 +317,7 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
     ensure_schema(&connection)?;
     let posts_per_hour = settings.posts_per_hour.clamp(1, 10);
     let daily_reply_limit = settings.daily_reply_limit.clamp(100, 2_000);
+    let per_minute_reply_limit = settings.per_minute_reply_limit.clamp(1, 60);
     connection.execute(
         "UPDATE x_assistant_task_settings
          SET auto_reply_enabled = ?1,
@@ -307,6 +327,7 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
              posts_per_hour = ?5,
              auto_post_news_type = ?6,
              daily_reply_limit = ?7,
+             per_minute_reply_limit = ?8,
              updated_at = datetime('now', '+8 hours')
          WHERE id = 1",
         params![
@@ -321,6 +342,7 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
                 _ => "all",
             },
             daily_reply_limit,
+            per_minute_reply_limit,
         ],
     )?;
     Ok(())
