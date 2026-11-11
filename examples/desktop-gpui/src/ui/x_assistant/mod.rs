@@ -1055,47 +1055,42 @@ fn load_reply_rules() -> String {
 impl XAssistantPage {
     // 将每个按钮拆分到独立函数，避免在 GPUI render 回调中创建一个过大的临时栈帧。
     fn render_status_tab_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 辅助诊断：状态页签 - 读取选中状态");
         let selected = self.show_run_status;
+        app_log::info!("X 辅助诊断：状态页签 - 构建原生 div 点击区域");
 
-        app_log::info!("X 辅助诊断：状态页签 - 创建点击监听器");
-        let listener = cx.listener(|this, _, _, cx| {
-            // 每次打开运行状态页都重新读取当天（北京时间）的日志，
-            // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
-            this.log_tail = Some(run_log::LogTail::new());
-            this.show_run_status = true;
-            this.show_reply_list = false;
-            this.show_post_history = false;
-            this.show_task_settings = false;
-            this.show_auto_post = false;
-            cx.notify();
-        });
+        // 暂时绕过封装 Button：当前崩溃发生在将 Button 加入父容器时。
+        // 使用 GPUI 原生 div 点击事件保留页签功能，便于确认是否为 Button 组件触发。
+        let button = div()
+            .id("x-assistant-status-tab")
+            .w(px(112.))
+            .px_2()
+            .py_1()
+            .text_size(px(12.))
+            .text_color(palette::text(cx.theme()))
+            .child("全部日志")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.log_tail = Some(run_log::LogTail::new());
+                this.show_run_status = true;
+                this.show_reply_list = false;
+                this.show_post_history = false;
+                this.show_task_settings = false;
+                this.show_auto_post = false;
+                cx.notify();
+            }));
 
-        app_log::info!("X 辅助诊断：状态页签 - 点击监听器创建完成，创建按钮");
-        let button = Button::new("x-assistant-status-tab")
-            .ghost()
-            .small()
-            .label("全部日志")
-            .on_click(listener);
-
-        app_log::info!("X 辅助诊断：状态页签 - 按钮创建完成，创建选中指示线");
+        app_log::info!("X 辅助诊断：状态页签 - 原生 div 点击区域创建完成");
         let indicator = div()
             .w_full()
             .h(px(2.))
             .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
 
-        app_log::info!("X 辅助诊断：状态页签 - 子元素创建完成，开始创建容器");
-        let container = v_flex();
-        app_log::info!("X 辅助诊断：状态页签 - 容器创建完成，设置宽度和间距");
-        let container = container.w(px(112.)).gap_1();
-        app_log::info!("X 辅助诊断：状态页签 - 样式设置完成，添加按钮子元素");
-        let container = container.child(button);
-        app_log::info!("X 辅助诊断：状态页签 - 按钮子元素添加完成，添加指示线");
-        let container = container.child(indicator);
-        app_log::info!("X 辅助诊断：状态页签 - 子元素添加完成，转换为 AnyElement");
-        let element = container.into_any_element();
-        app_log::info!("X 辅助诊断：状态页签 - AnyElement 转换完成");
-        element
+        app_log::info!("X 辅助诊断：状态页签 - 开始组装原生 div 容器");
+        v_flex()
+            .w(px(112.))
+            .gap_1()
+            .child(button)
+            .child(indicator)
+            .into_any_element()
     }
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = !self.show_run_status && !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post;
