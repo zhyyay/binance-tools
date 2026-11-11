@@ -265,6 +265,7 @@ impl Render for DesktopTitleBar {
                             .ghost()
                             .xsmall()
                             .on_click(|_, window, cx| {
+                                app_log::info!("[浏览器助手] 顶部导航按钮已点击，派发打开页面事件");
                                 window.dispatch_action(Box::new(OpenBrowserAssistant), cx);
                             }),
                     )
