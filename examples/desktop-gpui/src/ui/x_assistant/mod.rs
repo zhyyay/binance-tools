@@ -1217,15 +1217,24 @@ impl XAssistantPage {
             )
             .into_any_element()
     }
-    fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_page_menu(&self, cx: &mut Context<Self>, diagnostic: bool) -> AnyElement {
+        if diagnostic { app_log::info!("X 辅助诊断：开始渲染状态页签按钮"); }
         let status_button = self.render_status_tab_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：状态页签按钮完成，开始渲染回复工作区按钮"); }
         let reply_flow_button = self.render_reply_flow_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：回复工作区按钮完成，开始渲染自动发帖按钮"); }
         let auto_post_button = self.render_auto_post_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：自动发帖按钮完成，开始渲染全局开始按钮"); }
         let start_all_button = self.render_start_all_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：全局开始按钮完成，开始渲染全局停止按钮"); }
         let stop_all_button = self.render_stop_all_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：全局停止按钮完成，开始渲染回复历史按钮"); }
         let reply_list_button = self.render_reply_list_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：回复历史按钮完成，开始渲染发帖历史按钮"); }
         let post_history_button = self.render_post_history_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：发帖历史按钮完成，开始渲染任务设置按钮"); }
         let task_settings_button = self.render_task_settings_button(cx);
+        if diagnostic { app_log::info!("X 辅助诊断：顶部所有按钮均已构建"); }
 
         let theme = cx.theme();
         // 六个页面统一使用下划线 Tabs；运行状态和全局控制按钮位于同一行。
@@ -1311,7 +1320,7 @@ impl Render for XAssistantPage {
             if first_render {
                 app_log::info!("X 辅助诊断：首次渲染运行状态页，开始构建顶部菜单");
             }
-            let menu = self.render_page_menu(cx);
+            let menu = self.render_page_menu(cx, first_render);
             if first_render {
                 app_log::info!("X 辅助诊断：运行状态页顶部菜单构建完成");
             }
@@ -1423,7 +1432,7 @@ impl Render for XAssistantPage {
         }
 
         if self.show_task_settings {
-            let menu = self.render_page_menu(cx);
+            let menu = self.render_page_menu(cx, first_render);
             let task_settings = self.render_task_settings(cx);
             let theme = cx.theme();
             return v_flex()
@@ -1454,7 +1463,7 @@ impl Render for XAssistantPage {
         }
 
         if self.show_auto_post {
-            let menu = self.render_page_menu(cx);
+            let menu = self.render_page_menu(cx, first_render);
             let theme = cx.theme();
             return v_flex()
                 .size_full()
@@ -1559,7 +1568,7 @@ impl Render for XAssistantPage {
                 .min_h_0()
                 .gap_3()
                 .p_4()
-                .child(self.render_page_menu(cx))
+                .child(self.render_page_menu(cx, first_render))
                 .when_some(self.reply_list.clone(), |page, reply_list| {
                     if self.show_reply_list { page.child(reply_list) } else { page }
                 })
@@ -1568,7 +1577,7 @@ impl Render for XAssistantPage {
                 })
                 .into_any_element();
         }
-        let menu = self.render_page_menu(cx);
+        let menu = self.render_page_menu(cx, first_render);
         let theme = cx.theme();
         let selected_image = self.screenshots.get(self.selected_screenshot).cloned();
         let zoom_image = selected_image.clone();
