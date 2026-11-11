@@ -33,9 +33,8 @@ impl BrowserReplyRunner {
         anyhow::ensure!(page_response.ok, "读取 Chrome 当前页面失败：{}", page_response.error.unwrap_or_default());
         let page = page_response.result.unwrap_or(Value::Null);
         let url = page.get("url").and_then(Value::as_str).unwrap_or_default();
-        let is_x_home = ["https://x.com/home", "http://x.com/home"]
-            .iter()
-            .any(|prefix| url == *prefix || url.starts_with(&format!("{prefix}?")));
+        let route = url.split('?').next().unwrap_or_default().trim_end_matches('/');
+        let is_x_home = route == "https://x.com/home" || route == "http://x.com/home";
         anyhow::ensure!(
             is_x_home,
             "PAGE_CHANGED: 请先将 Chrome 当前活动标签页打开到 https://x.com/home"
@@ -188,15 +187,17 @@ impl BrowserReplyRunner {
 pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
     check_cancel(cancel)?;
     automation::log_event(&format!("浏览器插件：{reason}，滚动时间线加载下一批推文。"));
-    let mut client = BrowserClient::connect()
-        .context("连接浏览器插件失败，无法滚动 X 时间线")?;
-    let response = client.execute(BrowserCommand::Scroll { delta_y: 620 })?;
-    anyhow::ensure!(
-        response.ok,
-        "浏览器插件滚动失败：{}",
-        response.error.unwrap_or_default()
-    );
-    Ok(())
+    crate::ui::x_assistant::core::task_queue::run_browser_task(|| {
+        let mut client = BrowserClient::connect()
+            .context("连接浏览器插件失败，无法滚动 X 时间线")?;
+        let response = client.execute(BrowserCommand::Scroll { delta_y: 620 })?;
+        anyhow::ensure!(
+            response.ok,
+            "浏览器插件滚动失败：{}",
+            response.error.unwrap_or_default()
+        );
+        Ok(())
+    })
 }
 
 fn check_cancel(cancel: &AtomicBool) -> anyhow::Result<()> {
