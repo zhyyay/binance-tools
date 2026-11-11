@@ -33,9 +33,11 @@ impl BrowserReplyRunner {
         anyhow::ensure!(page_response.ok, "读取 Chrome 当前页面失败：{}", page_response.error.unwrap_or_default());
         let page = page_response.result.unwrap_or(Value::Null);
         let url = page.get("url").and_then(Value::as_str).unwrap_or_default();
-        let parsed = url::Url::parse(url).context("浏览器返回了无效页面地址")?;
+        let is_x_home = ["https://x.com/home", "http://x.com/home"]
+            .iter()
+            .any(|prefix| url == *prefix || url.starts_with(&format!("{prefix}?")));
         anyhow::ensure!(
-            parsed.host_str() == Some("x.com") && parsed.path().trim_end_matches('/') == "/home",
+            is_x_home,
             "PAGE_CHANGED: 请先将 Chrome 当前活动标签页打开到 https://x.com/home"
         );
 
