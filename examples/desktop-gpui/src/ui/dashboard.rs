@@ -543,10 +543,16 @@ impl Dashboard {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        app_log::info!("[浏览器助手] Dashboard 已收到 OpenBrowserAssistant 事件");
         if self.browser_assistant_page.is_none() {
+            app_log::info!("[浏览器助手] 开始创建 BrowserAssistantPage");
             self.browser_assistant_page = Some(cx.new(|cx| BrowserAssistantPage::new(window, cx)));
+            app_log::info!("[浏览器助手] BrowserAssistantPage 创建完成");
+        } else {
+            app_log::info!("[浏览器助手] 复用已有 BrowserAssistantPage");
         }
         self.activate_page(ActivePage::BrowserAssistant, cx);
+        app_log::info!("[浏览器助手] 已切换 ActivePage，通知窗口刷新");
         cx.notify();
     }
 
