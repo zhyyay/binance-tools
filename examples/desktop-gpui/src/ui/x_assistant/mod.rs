@@ -232,7 +232,7 @@ impl XAssistantPage {
         self.cancel_reply = Arc::new(AtomicBool::new(false));
         self.cancel_reason = Arc::new(AtomicU8::new(0));
         self.status = Some(if self.task_settings.auto_reply_enabled && self.auto_send {
-            "自动发帖与自动回复已启动；两类任务通过同一浏览器锁串行操作。点击停止可结束。".to_string()
+            "自动发帖与浏览器插件自动回复已启动；两类任务通过同一浏览器锁串行操作。点击停止可结束。".to_string()
         } else if self.task_settings.auto_reply_enabled {
             "自动发帖已启动；自动回复开关虽已开启，但自动发送关闭，本轮只执行发帖。".to_string()
         } else {
@@ -491,12 +491,12 @@ impl XAssistantPage {
         self.cancel_reply = Arc::new(AtomicBool::new(false));
         self.cancel_reason = Arc::new(AtomicU8::new(0));
         app_log::x_info!(
-            "自动回复启动：模式={}，本地 OCR={}",
+            "自动回复启动：模式={}，执行方式={}",
             if full_auto { "全自动" } else if hover_only { "仅悬停识别" } else { "单次回复" },
-            stage2_ocr
+            if full_auto { "Chrome 浏览器插件 DOM" } else if stage2_ocr { "本地 OCR" } else { "视觉模型" }
         );
         self.status = Some(if full_auto {
-            "全自动循环已启动；每轮完成后随机距离滚动，异常时按安全流程恢复，点击停止可结束。"
+            "浏览器插件全自动回复已启动；通过 DOM 读取时间线、AI 生成回复并由插件提交核验，点击停止可结束。"
                 .to_string()
         } else if hover_only {
             "5 秒后开始识别并移到回复按钮。AI 识图约需 15~30 秒，请切到 X 浏览器窗口。".to_string()
