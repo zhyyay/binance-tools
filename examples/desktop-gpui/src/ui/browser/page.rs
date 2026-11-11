@@ -117,7 +117,6 @@ impl BrowserAssistantPage {
 
 impl Render for BrowserAssistantPage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
         let selector = {
             let value = self.selector.read(cx).text().to_string().trim().to_string();
             if value.is_empty() {
@@ -185,6 +184,8 @@ impl Render for BrowserAssistantPage {
             BrowserCommand::Scroll { delta_y: 500 },
             cx,
         );
+
+        let theme = cx.theme();
 
         v_flex()
             .size_full()
