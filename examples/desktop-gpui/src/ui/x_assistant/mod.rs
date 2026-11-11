@@ -15,6 +15,9 @@ mod reply_filter;
 mod own_post_reply;
 mod run_log;
 mod vision;
+
+use browser_assistant_client::BrowserClient;
+use browser_core::BrowserCommand;
 use crate::ui::palette;
 
 use gpui::{prelude::FluentBuilder, *};
@@ -261,13 +264,43 @@ impl XAssistantPage {
         let task_finished_for_ui = Arc::clone(&task_finished);
         self._reply_task = cx.spawn(async move |this, cx| {
             let browser_ready = cx
-                .background_spawn(async {
-                    automation::native::check_native_host_installed()
-                        .and_then(|_| automation::native::activate_chrome_browser())
-                        .map_err(|error| {
-                            app_log::x_error!("自动化启动前检查失败：{error:#}");
-                            error
-                        })
+                .background_spawn(async move {
+                    if full_auto {
+                        let mut client = BrowserClient::connect().map_err(|error| {
+                            anyhow::anyhow!(
+                                "无法连接 Chrome 浏览器助手。请确认扩展已启用、Native Host 已安装；若刚安装扩展，请打开扩展弹窗连接一次。原始错误：{error:#}"
+                            )
+                        })?;
+                        let ping = client.execute(BrowserCommand::Ping)?;
+                        anyhow::ensure!(
+                            ping.ok,
+                            "Chrome 浏览器助手 Native Host 未响应：{}",
+                            ping.error.unwrap_or_default()
+                        );
+                        let page = client.execute(BrowserCommand::GetPageInfo)?;
+                        anyhow::ensure!(
+                            page.ok,
+                            "读取 Chrome 当前活动标签页失败：{}",
+                            page.error.unwrap_or_default()
+                        );
+                        let url = page.result
+                            .and_then(|value| value.get("url").and_then(serde_json::Value::as_str).map(str::to_owned))
+                            .unwrap_or_default();
+                        let route = url.split('?').next().unwrap_or_default().trim_end_matches('/');
+                        anyhow::ensure!(
+                            route == "https://x.com/home" || route == "http://x.com/home",
+                            "当前 Chrome 活动页面不是 X 时间线，请先打开 https://x.com/home（当前：{url}）"
+                        );
+                        app_log::x_info!("浏览器插件连接成功，当前页面：{url}");
+                        Ok::<(), anyhow::Error>(())
+                    } else {
+                        automation::native::check_native_host_installed()
+                            .and_then(|_| automation::native::activate_chrome_browser())
+                            .map_err(|error| {
+                                app_log::x_error!("自动化启动前检查失败：{error:#}");
+                                error
+                            })
+                    }
                 })
                 .await;
             if let Err(error) = browser_ready {
