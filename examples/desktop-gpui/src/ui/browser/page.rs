@@ -153,7 +153,14 @@ impl BrowserAssistantPage {
                 if !response.ok {
                     bail!(response.error.unwrap_or_else(|| "Ping 命令失败".into()));
                 }
-                Ok::<String, anyhow::Error>("Chrome 扩展、Native Host 和本地 IPC 响应正常".into())
+                let page = client.execute(BrowserCommand::GetPageInfo)?;
+                if !page.ok {
+                    bail!(page.error.unwrap_or_else(|| "读取当前标签页失败".into()));
+                }
+                let page = page.result.unwrap_or(serde_json::Value::Null);
+                let title = page.get("title").and_then(serde_json::Value::as_str).unwrap_or("未知页面");
+                let url = page.get("url").and_then(serde_json::Value::as_str).unwrap_or("");
+                Ok::<String, anyhow::Error>(format!("已连接 · {title} · {url}"))
             }).await;
             let _ = this.update(cx, |this, cx| {
                 this.busy = false;
@@ -209,7 +216,7 @@ impl BrowserAssistantPage {
                 let command = step.command.clone();
                 let result = cx.background_spawn(async move {
                     let mut client = BrowserClient::connect()
-                        .context("连接失败：请确认 Chrome、扩展和 Native Host 已安装并运行")?;
+                        .context("连接失败：请确认 Chrome 正在运行、已启用浏览器助手扩展；若 Native Host 尚未安装，请运行 browser-assistant 仓库中的 scripts/install-host.ps1")?;
                     let response = client.execute(command)?;
                     if !response.ok {
                         bail!(response.error.unwrap_or_else(|| "浏览器命令执行失败".into()));
@@ -302,7 +309,7 @@ impl BrowserAssistantPage {
     }
 
     fn render_header(&self, cx: &mut Context<Self>) -> AnyElement {
-        let status = if self.error.is_some() { "● 运行异常" } else if self.paused { "● 已暂停" } else if self.busy { "● 运行中" } else if self.status == "已连接" { "● 已连接" } else { "● 已停止" };
+        let status = if self.error.is_some() { "● 运行异常" } else if self.paused { "● 已暂停" } else if self.busy { "● 运行中" } else if self.status.contains("已连接") { "● 已连接" } else { "● 已停止" };
         let status_button = div()
             .rounded_full().border_1().border_color(palette::border(cx.theme()))
             .bg(palette::surface(cx.theme())).px_2().h(px(26.)).flex().items_center()
@@ -358,7 +365,7 @@ impl BrowserAssistantPage {
             .child(div().text_size(px(13.)).font_semibold().child("浏览器连接状态"))
             .child(h_flex().gap_2()
                 .child(Self::stat_card("Chrome / 当前标签页", self.status.clone(), palette::text(theme), theme))
-                .child(Self::stat_card("Native Host / IPC", if self.busy || self.status == "已连接" { "已响应".into() } else { "未检测".into() }, palette::text(theme), theme))
+                .child(Self::stat_card("Native Host / IPC", if self.busy || self.status.contains("已连接") { "已响应".into() } else { "未检测".into() }, palette::text(theme), theme))
                 .child(Self::stat_card("执行状态", if self.paused { "已暂停".into() } else if self.busy { "运行中".into() } else { "空闲".into() }, palette::text(theme), theme)))
             .child(div().text_size(px(13.)).font_semibold().child("今日执行统计"))
             .child(h_flex().gap_2()
@@ -405,10 +412,18 @@ impl BrowserAssistantPage {
         }
         let clear = Button::new("browser-clear-steps").label("清空步骤").small().outline()
             .disabled(self.busy).on_click(cx.listener(|this, _, _, cx| this.clear_steps(cx)));
+        let remove_last = Button::new("browser-remove-last-step").label("删除最后一步").small().outline()
+            .disabled(self.busy || self.steps.is_empty())
+            .on_click(cx.listener(|this, _, _, cx| {
+                if let Some(step) = this.steps.pop() {
+                    this.log(format!("已删除任务步骤：{}", step.name));
+                }
+                cx.notify();
+            }));
         let run = Button::new("browser-run-steps").label("执行任务").small().primary()
             .disabled(self.busy || self.steps.is_empty())
             .on_click(cx.listener(|this, _, _, cx| this.start_task(cx)));
-        content = content.child(row.child(div().flex_1()).child(clear).child(run));
+        content = content.child(row.child(div().flex_1()).child(remove_last).child(clear).child(run));
         let step_list = if self.steps.is_empty() {
             v_flex().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(12.)).text_color(palette::muted(theme)).child("任务列表为空。添加上方操作步骤，按顺序执行。")).into_any_element()
