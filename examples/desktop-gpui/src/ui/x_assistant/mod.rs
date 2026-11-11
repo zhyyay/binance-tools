@@ -223,7 +223,12 @@ impl XAssistantPage {
         self._reply_task = cx.spawn(async move |this, cx| {
             let browser_ready = cx
                 .background_spawn(async {
-                    automation::native::activate_chrome_browser()
+                    automation::native::check_native_host_installed()
+                        .and_then(|_| automation::native::activate_chrome_browser())
+                        .map_err(|error| {
+                            app_log::x_error!("自动化启动前检查失败：{error:#}");
+                            error
+                        })
                 })
                 .await;
             if let Err(error) = browser_ready {
@@ -337,7 +342,12 @@ impl XAssistantPage {
         self._reply_task = cx.spawn(async move |this, cx| {
             let browser_ready = cx
                 .background_spawn(async {
-                    automation::native::activate_chrome_browser()
+                    automation::native::check_native_host_installed()
+                        .and_then(|_| automation::native::activate_chrome_browser())
+                        .map_err(|error| {
+                            app_log::x_error!("自动化启动前检查失败：{error:#}");
+                            error
+                        })
                 })
                 .await;
             if let Err(error) = browser_ready {
@@ -468,7 +478,12 @@ impl XAssistantPage {
         self._reply_task = cx.spawn(async move |this, cx| {
             let browser_ready = cx
                 .background_spawn(async {
-                    automation::native::activate_chrome_browser()
+                    automation::native::check_native_host_installed()
+                        .and_then(|_| automation::native::activate_chrome_browser())
+                        .map_err(|error| {
+                            app_log::x_error!("自动化启动前检查失败：{error:#}");
+                            error
+                        })
                 })
                 .await;
             if let Err(error) = browser_ready {
