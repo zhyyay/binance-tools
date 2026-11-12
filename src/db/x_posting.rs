@@ -99,6 +99,7 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             news_id TEXT,
             source_url TEXT,
+            posting_method TEXT NOT NULL DEFAULT 'screenshot',
             original_hash TEXT NOT NULL,
             content_hash TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -143,6 +144,13 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
         "#,
     )
     .context("initialize X assistant task persistence schema")?;
+
+    super::add_column_if_missing(
+        connection,
+        "x_published_posts",
+        "posting_method",
+        "TEXT NOT NULL DEFAULT 'screenshot'",
+    )?;
 
     // Upgrade databases created before the news-type preference existed.
     let has_news_type = {
@@ -492,6 +500,53 @@ fn update_post_status(
     )?;
     ensure!(changed == 1, "未找到本地 X 发帖记录：{id}");
     Ok(())
+}
+
+/// Marks which automation client created the post record.
+pub fn set_posting_method_blocking(id: i64, method: &str) -> anyhow::Result<()> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let changed = connection.execute(
+        "UPDATE x_published_posts
+         SET posting_method = ?2, updated_at = datetime('now', '+8 hours')
+         WHERE id = ?1",
+        params![id, method],
+    )?;
+    ensure!(changed == 1, "未找到本地 X 发帖记录：{id}");
+    Ok(())
+}
+
+/// Returns only posts created by the browser assistant.
+pub fn list_browser_posts_blocking(limit: u32) -> anyhow::Result<Vec<XPublishedPost>> {
+    let connection = super::open_default_connection()?;
+    ensure_schema(&connection)?;
+    let mut statement = connection.prepare(
+        "SELECT id, news_id, original_hash, content_hash, content, status,
+                x_post_url, published_at, last_error, comment_status, comment_text,
+                commented_at, created_at, updated_at
+         FROM x_published_posts
+         WHERE posting_method = 'browser'
+         ORDER BY id DESC LIMIT ?1",
+    )?;
+    let rows = statement.query_map([limit.clamp(1, 500) as i64], |row| {
+        Ok(XPublishedPost {
+            id: row.get(0)?,
+            news_id: row.get(1)?,
+            original_hash: row.get(2)?,
+            content_hash: row.get(3)?,
+            content: row.get(4)?,
+            status: row.get(5)?,
+            x_post_url: row.get(6)?,
+            published_at: row.get(7)?,
+            last_error: row.get(8)?,
+            comment_status: row.get(9)?,
+            comment_text: row.get(10)?,
+            commented_at: row.get(11)?,
+            created_at: row.get(12)?,
+            updated_at: row.get(13)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
 pub fn list_published_posts_blocking(limit: u32) -> anyhow::Result<Vec<XPublishedPost>> {
