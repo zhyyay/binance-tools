@@ -871,17 +871,6 @@ impl XAssistantPage {
             .into_any_element()
     }
 
-ld(plus_button),
-            )
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(palette::muted(cx.theme()))
-                    .child("按滚动 60 秒窗口统计成功发送的回复；达到上限后自动等待额度恢复，不会停止全天任务。"),
-            )
-            .into_any_element()
-    }
-
     fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         app_log::x_info!("X 任务设置：开始渲染设置面板");
 
