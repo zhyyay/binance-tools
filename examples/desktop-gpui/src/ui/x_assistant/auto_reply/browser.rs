@@ -37,17 +37,11 @@ impl BrowserReplyRunner {
             "打开独立 X 自动化窗口失败：{}",
             window_response.error.unwrap_or_default()
         );
+        let window_info = window_response.result.unwrap_or(Value::Null);
+        let url = window_info.get("url").and_then(Value::as_str).unwrap_or_default();
         automation::log_browser_event(&format!(
-            "自动回复启动：独立 X 自动化窗口已就绪，{}。",
-            window_response.result.unwrap_or(Value::Null)
-        ));
-        let page_response = client.execute(BrowserCommand::GetPageInfo)?;
-        anyhow::ensure!(page_response.ok, "读取 Chrome 当前页面失败：{}", page_response.error.unwrap_or_default());
-        let page = page_response.result.unwrap_or(Value::Null);
-        let url = page.get("url").and_then(Value::as_str).unwrap_or_default();
-        let title = page.get("title").and_then(Value::as_str).unwrap_or_default();
-        automation::log_browser_event(&format!(
-            "自动回复启动：当前页面读取成功，title={title:?}，url={url:?}。"
+            "自动回复启动：独立 X 自动化窗口已就绪，window={}。",
+            window_info
         ));
         let route = url.split('?').next().unwrap_or_default().trim_end_matches('/');
         let is_x_home = route == "https://x.com/home" || route == "http://x.com/home";
@@ -310,7 +304,7 @@ pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::
     crate::ui::x_assistant::core::task_queue::run_browser_task(|| {
         let mut client = BrowserClient::connect()
             .context("连接浏览器插件失败，无法滚动 X 时间线")?;
-        let response = client.execute(BrowserCommand::Scroll { delta_y: 620 })?;
+        let response = client.execute(BrowserCommand::ScrollAutomation { delta_y: 620 })?;
         anyhow::ensure!(
             response.ok,
             "浏览器插件滚动失败：{}",
