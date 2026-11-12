@@ -881,9 +881,8 @@ let auto_comment_button = self.render_auto_comment_setting_button(cx);
 let own_post_reply_button = self.render_own_post_reply_setting_button(cx);
 let rate_controls = self.render_post_rate_controls(cx);
 let daily_reply_controls = self.render_daily_reply_limit_controls(cx);
-// 暂时不在设置面板挂载每分钟限流控件，隔离 GPUI 渲染崩溃；
-        // 每分钟限流配置和执行逻辑继续保留，不影响后台任务。
-        app_log::x_info!("X 任务设置诊断：每分钟限流 UI 暂时隐藏，执行逻辑保留");
+// 频率限制以固定说明展示，不挂载此前引发 GPUI 渲染问题的动态 +/- 控件。
+        app_log::x_info!("X 任务设置：每分钟最多 5 条、成功回复间隔至少 10 秒");
 
         let theme = cx.theme();
 let panel = v_flex()
@@ -914,6 +913,17 @@ let panel = v_flex()
                     .child(own_post_reply_button),
             )
             .child(rate_controls)
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(div().text_size(px(12.)).font_semibold().child("自动回复频率限制"))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(palette::muted(theme))
+                            .child("每滚动 60 秒最多回复 5 条；两次成功回复至少间隔 10 秒。此限制固定启用，不能调高。"),
+                    ),
+            )
             .child(daily_reply_controls)
             .child(
                 div()

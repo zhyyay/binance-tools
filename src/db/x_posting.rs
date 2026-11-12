@@ -313,7 +313,7 @@ pub fn load_task_settings_blocking() -> anyhow::Result<XAssistantTaskSettings> {
                         _ => "all".to_string(),
                     },
                     daily_reply_limit: row.get::<_, i64>(6)?.clamp(100, 2_000) as u16,
-                    per_minute_reply_limit: row.get::<_, i64>(7)?.clamp(1, 60) as u8,
+                    per_minute_reply_limit: row.get::<_, i64>(7)?.clamp(1, 5) as u8,
                 })
             },
         )
@@ -325,7 +325,7 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
     ensure_schema(&connection)?;
     let posts_per_hour = settings.posts_per_hour.clamp(1, 10);
     let daily_reply_limit = settings.daily_reply_limit.clamp(100, 2_000);
-    let per_minute_reply_limit = settings.per_minute_reply_limit.clamp(1, 60);
+    let per_minute_reply_limit = settings.per_minute_reply_limit.clamp(1, 5);
     connection.execute(
         "UPDATE x_assistant_task_settings
          SET auto_reply_enabled = ?1,
