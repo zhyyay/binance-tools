@@ -509,11 +509,18 @@ impl XAssistantPage {
         self.error = None;
         self.cancel_reply = Arc::new(AtomicBool::new(false));
         self.cancel_reason = Arc::new(AtomicU8::new(0));
-        app_log::x_info!(
-            "自动回复启动：模式={}，执行方式={}",
-            if full_auto { "全自动" } else if hover_only { "仅悬停识别" } else { "单次回复" },
-            if full_auto { "Chrome 浏览器插件 DOM" } else if stage2_ocr { "本地 OCR" } else { "视觉模型" }
-        );
+        if full_auto {
+            app_log::x_browser_info!(
+                "自动回复启动 | 任务模式={} | 执行方式=Chrome 扩展 DOM",
+                if hover_only { "仅悬停识别" } else { "全自动" }
+            );
+        } else {
+            app_log::x_screenshot_info!(
+                "自动回复启动 | 任务模式={} | 执行方式={}",
+                if hover_only { "仅悬停识别" } else { "单次回复" },
+                if stage2_ocr { "本地 OCR" } else { "视觉模型" }
+            );
+        }
         self.status = Some(if full_auto {
             "浏览器插件全自动回复已启动；通过 DOM 读取时间线、AI 生成回复并由插件提交核验，点击停止可结束。"
                 .to_string()
@@ -1312,23 +1319,23 @@ impl XAssistantPage {
             .into_any_element()
     }
     fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：开始构建运行状态按钮");
+        app_log::x_info!("X 菜单诊断：开始构建运行状态按钮");
         let status_button = self.render_status_tab_button(cx);
-        app_log::info!("X 菜单诊断：运行状态按钮构建完成，开始构建自动回复按钮");
+        app_log::x_info!("X 菜单诊断：运行状态按钮构建完成，开始构建自动回复按钮");
         let reply_flow_button = self.render_reply_flow_button(cx);
-        app_log::info!("X 菜单诊断：自动回复按钮构建完成，开始构建自动发帖按钮");
+        app_log::x_info!("X 菜单诊断：自动回复按钮构建完成，开始构建自动发帖按钮");
         let auto_post_button = self.render_auto_post_button(cx);
-        app_log::info!("X 菜单诊断：自动发帖按钮构建完成，开始构建全局开始按钮");
+        app_log::x_info!("X 菜单诊断：自动发帖按钮构建完成，开始构建全局开始按钮");
         let start_all_button = self.render_start_all_button(cx);
-        app_log::info!("X 菜单诊断：全局开始按钮构建完成，开始构建全局停止按钮");
+        app_log::x_info!("X 菜单诊断：全局开始按钮构建完成，开始构建全局停止按钮");
         let stop_all_button = self.render_stop_all_button(cx);
-        app_log::info!("X 菜单诊断：全局停止按钮构建完成，开始构建回复列表按钮");
+        app_log::x_info!("X 菜单诊断：全局停止按钮构建完成，开始构建回复列表按钮");
         let reply_list_button = self.render_reply_list_button(cx);
-        app_log::info!("X 菜单诊断：回复列表按钮构建完成，开始构建发帖历史按钮");
+        app_log::x_info!("X 菜单诊断：回复列表按钮构建完成，开始构建发帖历史按钮");
         let post_history_button = self.render_post_history_button(cx);
-        app_log::info!("X 菜单诊断：发帖历史按钮构建完成，开始构建任务设置按钮");
+        app_log::x_info!("X 菜单诊断：发帖历史按钮构建完成，开始构建任务设置按钮");
         let task_settings_button = self.render_task_settings_button(cx);
-        app_log::info!("X 菜单诊断：全部按钮构建完成，开始组装菜单容器");
+        app_log::x_info!("X 菜单诊断：全部按钮构建完成，开始组装菜单容器");
 
         let theme = cx.theme();
         // 六个页面统一使用下划线 Tabs；运行状态和全局控制按钮位于同一行。
@@ -1371,31 +1378,31 @@ impl XAssistantPage {
             })
             .into_any_element();
 
-        app_log::info!("X 菜单诊断：组装容器 A，创建 h_flex");
+        app_log::x_info!("X 菜单诊断：组装容器 A，创建 h_flex");
         let menu = h_flex().items_end().gap_2();
-        app_log::info!("X 菜单诊断：组装容器 B，基础容器创建完成");
+        app_log::x_info!("X 菜单诊断：组装容器 B，基础容器创建完成");
         let menu = menu.child(status_button);
-        app_log::info!("X 菜单诊断：组装容器 C，已加入运行状态");
+        app_log::x_info!("X 菜单诊断：组装容器 C，已加入运行状态");
         let menu = menu.child(reply_flow_button);
-        app_log::info!("X 菜单诊断：组装容器 D，已加入自动回复");
+        app_log::x_info!("X 菜单诊断：组装容器 D，已加入自动回复");
         let menu = menu.child(auto_post_button);
-        app_log::info!("X 菜单诊断：组装容器 E，已加入自动发帖");
+        app_log::x_info!("X 菜单诊断：组装容器 E，已加入自动发帖");
         let menu = menu.child(reply_list_button);
-        app_log::info!("X 菜单诊断：组装容器 F，已加入回复列表");
+        app_log::x_info!("X 菜单诊断：组装容器 F，已加入回复列表");
         let menu = menu.child(post_history_button);
-        app_log::info!("X 菜单诊断：组装容器 G，已加入发帖历史");
+        app_log::x_info!("X 菜单诊断：组装容器 G，已加入发帖历史");
         let menu = menu.child(task_settings_button);
-        app_log::info!("X 菜单诊断：组装容器 H，已加入任务设置");
+        app_log::x_info!("X 菜单诊断：组装容器 H，已加入任务设置");
         let menu = menu.child(div().flex_1());
-        app_log::info!("X 菜单诊断：组装容器 I，已加入弹性占位");
+        app_log::x_info!("X 菜单诊断：组装容器 I，已加入弹性占位");
         let menu = menu.child(run_state);
-        app_log::info!("X 菜单诊断：组装容器 J，已加入运行状态指示");
+        app_log::x_info!("X 菜单诊断：组装容器 J，已加入运行状态指示");
         let menu = menu.child(start_all_button);
-        app_log::info!("X 菜单诊断：组装容器 K，已加入全局开始");
+        app_log::x_info!("X 菜单诊断：组装容器 K，已加入全局开始");
         let menu = menu.child(stop_all_button);
-        app_log::info!("X 菜单诊断：组装容器 L，已加入全局停止");
+        app_log::x_info!("X 菜单诊断：组装容器 L，已加入全局停止");
         let menu = menu.into_any_element();
-        app_log::info!("X 菜单诊断：组装容器 M，转换为 AnyElement 完成");
+        app_log::x_info!("X 菜单诊断：组装容器 M，转换为 AnyElement 完成");
         menu
     }
 }
@@ -1404,7 +1411,7 @@ impl Render for XAssistantPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.render_count = self.render_count.saturating_add(1);
         if self.render_count % 100 == 0 {
-            app_log::info!(
+            app_log::x_info!(
                 "X 辅助诊断：页面累计渲染 {} 次；replying={}，当前页面状态：运行状态={}，任务设置={}，自动发帖={}，回复历史={}，发帖历史={}",
                 self.render_count,
                 self.replying,
@@ -1426,7 +1433,7 @@ impl Render for XAssistantPage {
         let first_render = !self.render_diagnostic_logged;
         if first_render {
             self.render_diagnostic_logged = true;
-            app_log::info!(
+            app_log::x_info!(
                 "X 辅助诊断：首次进入 XAssistantPage::render，show_run_status={}，show_task_settings={}，show_auto_post={}，show_reply_list={}，show_post_history={}",
                 self.show_run_status,
                 self.show_task_settings,
@@ -1437,11 +1444,11 @@ impl Render for XAssistantPage {
         }
         if self.show_run_status {
             if first_render {
-                app_log::info!("X 辅助诊断：首次渲染运行状态页，开始构建顶部菜单");
+                app_log::x_info!("X 辅助诊断：首次渲染运行状态页，开始构建顶部菜单");
             }
             let menu = self.render_page_menu(cx);
             if first_render {
-                app_log::info!("X 辅助诊断：运行状态页顶部菜单构建完成");
+                app_log::x_info!("X 辅助诊断：运行状态页顶部菜单构建完成");
             }
             let theme = cx.theme();
             let logs = self.log_tail.as_ref().map(run_log::LogTail::lines).unwrap_or(&[]);
@@ -1449,7 +1456,7 @@ impl Render for XAssistantPage {
             let post_success = self.post_today_success;
             let post_failed = self.post_today_failed;
             if first_render {
-                app_log::info!("X 辅助诊断：运行状态页统计数据已从缓存读取，开始构建内容区域");
+                app_log::x_info!("X 辅助诊断：运行状态页统计数据已从缓存读取，开始构建内容区域");
             }
             let stat = |label: &'static str, value: u64, color: gpui::Hsla, label_color: gpui::Hsla, background: gpui::Hsla| {
                 div().flex_1().min_w_0().rounded(px(7.)).border_1()
@@ -1493,7 +1500,7 @@ impl Render for XAssistantPage {
             let runtime_notice = self.error.clone().or_else(|| self.status.clone());
             let runtime_notice_is_error = self.error.is_some();
             if first_render {
-                app_log::info!("X 辅助诊断：运行状态页内容树构建完成，即将返回 GPUI");
+                app_log::x_info!("X 辅助诊断：运行状态页内容树构建完成，即将返回 GPUI");
             }
             return v_flex().size_full().min_w_0().min_h_0().gap_3().p_4()
                 .child(menu)
