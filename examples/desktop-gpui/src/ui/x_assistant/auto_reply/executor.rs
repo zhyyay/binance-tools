@@ -125,6 +125,21 @@ impl AutoReplyRunner {
                 log_round_result(round, &result, started.elapsed());
                 self.handle_result(result, cancel)
             }
+            Err(error) if is_reply_quality_rejection(&error) => {
+                // 质量过滤失败只代表当前帖子不适合回复，不是浏览器/任务故障。
+                // 这里作为第二道兜底：即使底层 runner 未能识别专用错误类型，
+                // 也必须跳过当前帖子并继续自动化循环，绝不能向 UI 抛出“自动化异常”。
+                let reason = compact_log_value(&format!("{error:#}"));
+                app_log::x_browser_info!(
+                    "[第{round}轮] 跳过帖子 | 原因=AI 连续两次未通过质量过滤，未输入、未发送 | {reason} | 耗时={:.1}s",
+                    started.elapsed().as_secs_f64()
+                );
+                automation::log_browser_event(&format!(
+                    "全自动：当前帖子因 AI 回复质量不合格而跳过；不会输入或发送，继续检查下一条。原因={reason}"
+                ));
+                self.failures = 0;
+                self.scroll_or_recover(cancel, "AI 回复质量过滤不合格，跳过当前帖子并查找下一条")
+            }
             Err(error) => {
                 log_round_error(round, &error, cancel, started.elapsed());
                 self.handle_error(error, cancel)
