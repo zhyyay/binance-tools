@@ -788,7 +788,7 @@ pub(super) mod native {
 
 /// AI 回复链路沿用发起方的自动化模式，避免浏览器模式误记为截图模式。
 #[derive(Clone, Copy)]
-pub(super) enum LogMode {
+pub(crate) enum LogMode {
     Screenshot,
     Browser,
 }
