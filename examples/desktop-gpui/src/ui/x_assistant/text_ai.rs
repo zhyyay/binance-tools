@@ -84,6 +84,7 @@ pub(crate) fn send_openai_text_cancellable(
                 prompt,
                 request_timeout,
                 cancel,
+                log_mode,
                 false,
             )
             .context("think 模式未生成正文，关闭 think 重试仍失败")
