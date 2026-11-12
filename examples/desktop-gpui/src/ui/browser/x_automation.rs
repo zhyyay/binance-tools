@@ -313,9 +313,23 @@ fn run_reply_round(
             automation::LogMode::Browser,
         ) {
             Ok(text) => text,
+            Err(error)
+                if format!("{error:#}").contains("回复连续两次未通过质量过滤") =>
+            {
+                // 质量拒绝只影响当前帖子：两次生成均不合格时绝不创建回复记录、
+                // 不输入也不发送，继续检查本轮时间线中的下一条帖子。
+                app_log::x_info!(
+                    "浏览器助手：[自动回复] 跳过当前帖子，AI 回复连续两次未通过质量过滤；未输入、未发送：post_id={}，作者={}，账号={}，原因={:#}",
+                    post_id,
+                    author_name,
+                    account,
+                    error
+                );
+                continue;
+            }
             Err(error) => {
                 app_log::x_warn!(
-                    "浏览器助手：[自动回复] AI 回复生成/质量过滤失败，帖子仍未提交：post_id={}，作者={}，账号={}，原帖正文={:?}，失败原因={:#}",
+                    "浏览器助手：[自动回复] AI 回复生成失败，帖子仍未提交：post_id={}，作者={}，账号={}，原帖正文={:?}，失败原因={:#}",
                     post_id,
                     author_name,
                     account,
