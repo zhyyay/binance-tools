@@ -704,7 +704,7 @@ impl BrowserAssistantPage {
                     .child(entertainment)))
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(13.)).font_semibold().child("X 回复规则"))
-                .child(Input::new(&self.x_reply_rules).small())
+                .child(Input::new(&self.x_reply_rules).appearance(false))
                 .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("点击「开始」后，如果当前活动标签页是 x.com/home，将自动解析帖子、生成回复并提交；同时按限制参数调度自动发帖。")))
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(13.)).font_semibold().child("网页操作安全"))
