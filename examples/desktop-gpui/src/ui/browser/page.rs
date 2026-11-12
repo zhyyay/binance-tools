@@ -104,12 +104,13 @@ impl BrowserAssistantPage {
     }
 
     fn selector_value(&self, cx: &App) -> String {
-        let value = self.selector.read(cx).text().trim().to_string();
+        let value = self.selector.read(cx).text().to_string();
+        let value = value.trim().to_string();
         if value.is_empty() { "body".into() } else { value }
     }
 
     fn add_step(&mut self, kind: StepKind, cx: &mut Context<Self>) {
-        let selector = self.selector.read(cx).text().trim().to_string();
+        let selector = self.selector.read(cx).text().to_string().trim().to_string();
         let selector = if selector.is_empty() { "body".to_string() } else { selector };
         let text = self.text_input.read(cx).text().to_string();
         let step = match kind {
