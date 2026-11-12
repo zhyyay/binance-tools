@@ -466,12 +466,30 @@ pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::
     crate::ui::x_assistant::core::task_queue::run_browser_task(|| {
         let mut client = BrowserClient::connect()
             .context("连接浏览器插件失败，无法滚动 X 时间线")?;
-        let response = client.execute(BrowserCommand::ScrollAutomation { delta_y })?;
+        let command_started = Instant::now();
+        automation::log_browser_event(&format!(
+            "滚动命令诊断：开始发送 ScrollAutomation，delta_y={}px；目标为独立 X 自动化标签页。",
+            delta_y
+        ));
+        let response = match client.execute(BrowserCommand::ScrollAutomation { delta_y }) {
+            Ok(response) => response,
+            Err(error) => {
+                automation::log_browser_event(&format!(
+                    "滚动命令诊断：Native Host/扩展未正常返回，等待 {:.2}s 后失败：{error:#}",
+                    command_started.elapsed().as_secs_f64()
+                ));
+                return Err(error).context("ScrollAutomation 命令执行失败");
+            }
+        };
         anyhow::ensure!(
             response.ok,
             "浏览器插件滚动失败：{}",
             response.error.unwrap_or_default()
         );
+        automation::log_browser_event(&format!(
+            "滚动命令诊断：ScrollAutomation 已完成，耗时 {:.2}s。",
+            command_started.elapsed().as_secs_f64()
+        ));
 
         let elapsed = Duration::from_millis(pause_ms);
         let mut waited = Duration::ZERO;
