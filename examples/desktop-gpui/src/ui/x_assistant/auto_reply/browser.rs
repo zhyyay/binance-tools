@@ -184,6 +184,22 @@ impl BrowserReplyRunner {
                 }
             };
 
+            if let Some(stages) = sent.get("interaction_trace").and_then(Value::as_array) {
+                for stage in stages {
+                    let name = stage.get("stage").and_then(Value::as_str).unwrap_or("unknown");
+                    let elapsed_ms = stage.get("elapsed_ms").and_then(Value::as_u64).unwrap_or(0);
+                    let typed_graphemes = stage.get("typed_graphemes").and_then(Value::as_u64);
+                    automation::log_browser_event(&format!(
+                        "后台浏览器交互：步骤={}，耗时={}ms，输入字符数={:?}；未控制 Windows 系统鼠标。",
+                        name, elapsed_ms, typed_graphemes
+                    ));
+                }
+            } else {
+                automation::log_browser_event(
+                    "后台浏览器交互：扩展未返回分步骤诊断信息；本次流程不调用 Windows 系统鼠标。",
+                );
+            }
+
             match sent.get("status").and_then(Value::as_str) {
                 Some("sent") if sent.get("confirmed").and_then(Value::as_bool) == Some(true) => {
                     if let Err(error) = binance_tools::db::x_assistant::mark_last_step_completed_blocking(&run_id) {
