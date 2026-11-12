@@ -586,7 +586,7 @@ impl BrowserAssistantPage {
                         posts_per_hour,
                     )?;
                     Ok::<(u64, String), anyhow::Error>((
-                        u64::from(result.outcome == crate::ui::x_assistant::auto_post::submit::SubmitOutcome::Published),
+                        if result.outcome == crate::ui::x_assistant::auto_post::submit::SubmitOutcome::Published { 1 } else { 0 },
                         format!("测试发帖结束：记录 ID={}，结果={:?}，{}", result.post_id, result.outcome, result.message),
                     ))
                 } else {
@@ -1266,7 +1266,7 @@ impl BrowserAssistantPage {
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(13.)).font_semibold().child("网页操作安全"))
                 .child(div().text_size(px(12.)).child("只操作当前活动的 HTTP/HTTPS 标签页；不会读取 Cookie、localStorage 或 sessionStorage。"))
-                .child(div().text_size(px(12.)).child("普通网页任务仍可在「自动化任务」中手动编排；X 自动化则由「开始」统一执行回复和发帖。")))
+                .child(div().text_size(px(12.)).child("普通网页任务在「自动化任务」中手动编排；自动发帖在「自动发帖」工作区独立运行，不会触发自动回复。")))
             .into_any_element()
     }
 }
