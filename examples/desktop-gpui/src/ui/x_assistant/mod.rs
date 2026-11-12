@@ -1145,69 +1145,47 @@ impl XAssistantPage {
     }
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        div()
-            .id("x-assistant-start-all-automation")
+        Button::new("x-assistant-start-all-automation")
+            .label("开始")
+            .small()
             .rounded_full()
             .bg(palette::surface(theme))
-            .text_color(if self.replying {
-                palette::muted(theme)
-            } else {
-                palette::text(theme)
-            })
+            .text_color(palette::text(theme))
             .px_4()
-            .py_1()
-            .text_size(px(12.))
-            .child("开始")
-            .when(!self.replying, |button| {
-                button
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        app_log::x_info!("[全局开始按钮] 点击事件已触发");
-                        this.start_all_automation(cx);
-                    }))
-            })
+            .disabled(self.replying)
+            .tooltip("启动自动化回复、发帖")
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::x_info!("[全局开始按钮] 点击事件已触发");
+                this.start_all_automation(cx);
+            }))
             .into_any_element()
     }
 
     fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        div()
-            .id("x-assistant-stop-all-automation")
+        Button::new("x-assistant-stop-all-automation")
+            .label("停止")
+            .small()
             .rounded_full()
             .bg(palette::surface(theme))
-            .text_color(if self.replying {
-                palette::text(theme)
-            } else {
-                palette::muted(theme)
-            })
+            .text_color(palette::text(theme))
             .px_4()
-            .py_1()
-            .text_size(px(12.))
-            .child("停止")
-            .when(self.replying, |button| {
-                button
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
-            })
+            .disabled(!self.replying)
+            .tooltip("中断自动化")
+            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
             .into_any_element()
     }
 
     fn render_reply_list_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_reply_list;
-        let theme = cx.theme();
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                div()
-                    .id("x-assistant-reply-list-tab")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .text_size(px(12.))
-                    .text_color(if selected { palette::text(theme) } else { palette::muted(theme) })
-                    .child("回复历史")
-                    .cursor_pointer()
+                Button::new("x-assistant-reply-list-tab")
+                    .ghost()
+                    .small()
+                    .label("回复列表")
                     .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
             )
             .child(
@@ -1220,20 +1198,14 @@ impl XAssistantPage {
     }
     fn render_post_history_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_post_history;
-        let theme = cx.theme();
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                div()
-                    .id("x-assistant-post-history-tab")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .text_size(px(12.))
-                    .text_color(if selected { palette::text(theme) } else { palette::muted(theme) })
-                    .child("发帖历史")
-                    .cursor_pointer()
+                Button::new("x-assistant-post-history-tab")
+                    .ghost()
+                    .small()
+                    .label("发帖历史")
                     .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx))),
             )
             .child(
@@ -1246,20 +1218,14 @@ impl XAssistantPage {
     }
     fn render_task_settings_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_task_settings;
-        let theme = cx.theme();
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                div()
-                    .id("x-assistant-task-settings-tab")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .text_size(px(12.))
-                    .text_color(if selected { palette::text(theme) } else { palette::muted(theme) })
-                    .child("设置")
-                    .cursor_pointer()
+                Button::new("x-assistant-task-settings-tab")
+                    .ghost()
+                    .small()
+                    .label("任务设置")
                     .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
             )
             .child(
@@ -1270,24 +1236,15 @@ impl XAssistantPage {
             )
             .into_any_element()
     }
-    fn render_page_menu(&self, cx: &mut Context<Self>, diagnostic: bool) -> AnyElement {
-        if diagnostic { app_log::info!("X 辅助诊断：开始渲染状态页签按钮"); }
+    fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
         let status_button = self.render_status_tab_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：状态页签按钮完成，开始渲染回复工作区按钮"); }
         let reply_flow_button = self.render_reply_flow_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：回复工作区按钮完成，开始渲染自动发帖按钮"); }
         let auto_post_button = self.render_auto_post_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：自动发帖按钮完成，开始渲染全局开始按钮"); }
         let start_all_button = self.render_start_all_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：全局开始按钮完成，开始渲染全局停止按钮"); }
         let stop_all_button = self.render_stop_all_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：全局停止按钮完成，开始渲染回复历史按钮"); }
         let reply_list_button = self.render_reply_list_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：回复历史按钮完成，开始渲染发帖历史按钮"); }
         let post_history_button = self.render_post_history_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：发帖历史按钮完成，开始渲染任务设置按钮"); }
         let task_settings_button = self.render_task_settings_button(cx);
-        if diagnostic { app_log::info!("X 辅助诊断：顶部所有按钮均已构建"); }
 
         let theme = cx.theme();
         // 六个页面统一使用下划线 Tabs；运行状态和全局控制按钮位于同一行。
@@ -1330,8 +1287,7 @@ impl XAssistantPage {
             })
             .into_any_element();
 
-        if diagnostic { app_log::info!("X 辅助诊断：开始组装顶部菜单布局"); }
-        let menu = h_flex()
+        h_flex()
             .items_end()
             .gap_2()
             .child(status_button)
@@ -1343,9 +1299,8 @@ impl XAssistantPage {
             .child(div().flex_1())
             .child(run_state)
             .child(start_all_button)
-            .child(stop_all_button);
-        if diagnostic { app_log::info!("X 辅助诊断：顶部菜单布局组装完成"); }
-        menu.into_any_element()
+            .child(stop_all_button)
+            .into_any_element()
     }
 }
 
@@ -1388,7 +1343,7 @@ impl Render for XAssistantPage {
             if first_render {
                 app_log::info!("X 辅助诊断：首次渲染运行状态页，开始构建顶部菜单");
             }
-            let menu = self.render_page_menu(cx, first_render);
+            let menu = self.render_page_menu(cx);
             if first_render {
                 app_log::info!("X 辅助诊断：运行状态页顶部菜单构建完成");
             }
@@ -1500,7 +1455,7 @@ impl Render for XAssistantPage {
         }
 
         if self.show_task_settings {
-            let menu = self.render_page_menu(cx, first_render);
+            let menu = self.render_page_menu(cx);
             let task_settings = self.render_task_settings(cx);
             let theme = cx.theme();
             return v_flex()
@@ -1531,7 +1486,7 @@ impl Render for XAssistantPage {
         }
 
         if self.show_auto_post {
-            let menu = self.render_page_menu(cx, first_render);
+            let menu = self.render_page_menu(cx);
             let theme = cx.theme();
             return v_flex()
                 .size_full()
@@ -1636,7 +1591,7 @@ impl Render for XAssistantPage {
                 .min_h_0()
                 .gap_3()
                 .p_4()
-                .child(self.render_page_menu(cx, first_render))
+                .child(self.render_page_menu(cx))
                 .when_some(self.reply_list.clone(), |page, reply_list| {
                     if self.show_reply_list { page.child(reply_list) } else { page }
                 })
@@ -1645,7 +1600,7 @@ impl Render for XAssistantPage {
                 })
                 .into_any_element();
         }
-        let menu = self.render_page_menu(cx, first_render);
+        let menu = self.render_page_menu(cx);
         let theme = cx.theme();
         let selected_image = self.screenshots.get(self.selected_screenshot).cloned();
         let zoom_image = selected_image.clone();
