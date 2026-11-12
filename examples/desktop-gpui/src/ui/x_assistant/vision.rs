@@ -2,7 +2,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     cell::RefCell,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     thread,
     time::{Duration, Instant},
 };
