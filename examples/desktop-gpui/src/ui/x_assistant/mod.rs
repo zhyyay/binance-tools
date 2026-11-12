@@ -1176,22 +1176,21 @@ impl XAssistantPage {
         element
     }
 
-    fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = cx.theme();
-        Button::new("x-assistant-start-all-automation")
-            .label("开始")
-            .small()
+    fn render_start_all_button(&self, _cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 菜单诊断：全局开始按钮 A，创建外层容器");
+        let button = div()
+            .id("x-assistant-start-all-automation")
             .rounded_full()
-            .bg(palette::surface(theme))
-            .text_color(palette::text(theme))
+            .bg(palette::surface(_cx.theme()))
+            .text_color(palette::text(_cx.theme()))
             .px_4()
-            .disabled(self.replying)
-            .tooltip("启动自动化回复、发帖")
-            .on_click(cx.listener(|this, _, _, cx| {
-                app_log::x_info!("[全局开始按钮] 点击事件已触发");
-                this.start_all_automation(cx);
-            }))
-            .into_any_element()
+            .py_1()
+            .when(self.replying, |this| this.opacity(0.5))
+            .child("开始");
+        app_log::info!("X 菜单诊断：全局开始按钮 B，普通 div 已创建");
+        let button = button.into_any_element();
+        app_log::info!("X 菜单诊断：全局开始按钮 C，转换为 AnyElement，构建完成");
+        button
     }
 
     fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
