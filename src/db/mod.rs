@@ -12,6 +12,7 @@ use std::{
 
 pub mod ai;
 pub mod ai_rules;
+pub mod browser_assistant;
 pub mod ai_threads;
 pub mod alpha;
 pub mod crypto_news;
