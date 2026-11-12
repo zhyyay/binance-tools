@@ -1095,16 +1095,25 @@ impl XAssistantPage {
             .into_any_element()
     }
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        let selected = !self.show_run_status && !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post;
+        let selected = !self.show_run_status
+            && !self.show_reply_list
+            && !self.show_post_history
+            && !self.show_task_settings
+            && !self.show_auto_post;
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-reply-flow-tab")
-                    .ghost()
-                    .small()
-                    .label("自动回复")
-                    .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
+                div()
+                    .id("x-assistant-reply-flow-tab")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        this.show_reply_flow(cx);
+                    }))
+                    .px_2()
+                    .py_1()
+                    .text_size(px(12.))
+                    .child("自动回复"),
             )
             .child(
                 div()
@@ -1114,17 +1123,23 @@ impl XAssistantPage {
             )
             .into_any_element()
     }
+
     fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_auto_post;
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-auto-post-tab")
-                    .ghost()
-                    .small()
-                    .label("自动发帖")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
+                div()
+                    .id("x-assistant-auto-post-tab")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        this.open_auto_post(cx);
+                    }))
+                    .px_2()
+                    .py_1()
+                    .text_size(px(12.))
+                    .child("自动发帖"),
             )
             .child(
                 div()
@@ -1134,36 +1149,45 @@ impl XAssistantPage {
             )
             .into_any_element()
     }
+
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        Button::new("x-assistant-start-all-automation")
-            .label("开始")
-            .small()
+        div()
+            .id("x-assistant-start-all-automation")
+            .cursor_pointer()
+            .when(!self.replying, |button| {
+                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    app_log::x_info!("[全局开始按钮] 点击事件已触发");
+                    this.start_all_automation(cx);
+                }))
+            })
             .rounded_full()
             .bg(palette::surface(theme))
-            .text_color(palette::text(theme))
+            .text_color(if self.replying { palette::muted(theme) } else { palette::text(theme) })
             .px_4()
-            .disabled(self.replying)
-            .tooltip("启动自动化回复、发帖")
-            .on_click(cx.listener(|this, _, _, cx| {
-                app_log::x_info!("[全局开始按钮] 点击事件已触发");
-                this.start_all_automation(cx);
-            }))
+            .py_1()
+            .text_size(px(12.))
+            .child("开始")
             .into_any_element()
     }
 
     fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        Button::new("x-assistant-stop-all-automation")
-            .label("停止")
-            .small()
+        div()
+            .id("x-assistant-stop-all-automation")
+            .cursor_pointer()
+            .when(self.replying, |button| {
+                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.stop_visual_reply(cx);
+                }))
+            })
             .rounded_full()
             .bg(palette::surface(theme))
-            .text_color(palette::text(theme))
+            .text_color(if self.replying { palette::text(theme) } else { palette::muted(theme) })
             .px_4()
-            .disabled(!self.replying)
-            .tooltip("中断自动化")
-            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
+            .py_1()
+            .text_size(px(12.))
+            .child("停止")
             .into_any_element()
     }
 
@@ -1173,11 +1197,16 @@ impl XAssistantPage {
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-reply-list-tab")
-                    .ghost()
-                    .small()
-                    .label("回复列表")
-                    .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
+                div()
+                    .id("x-assistant-reply-list-tab")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                        this.open_reply_list(window, cx);
+                    }))
+                    .px_2()
+                    .py_1()
+                    .text_size(px(12.))
+                    .child("回复列表"),
             )
             .child(
                 div()
@@ -1187,17 +1216,23 @@ impl XAssistantPage {
             )
             .into_any_element()
     }
+
     fn render_post_history_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_post_history;
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-post-history-tab")
-                    .ghost()
-                    .small()
-                    .label("发帖历史")
-                    .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx))),
+                div()
+                    .id("x-assistant-post-history-tab")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                        this.open_post_history(window, cx);
+                    }))
+                    .px_2()
+                    .py_1()
+                    .text_size(px(12.))
+                    .child("发帖历史"),
             )
             .child(
                 div()
@@ -1207,17 +1242,23 @@ impl XAssistantPage {
             )
             .into_any_element()
     }
+
     fn render_task_settings_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_task_settings;
         v_flex()
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-task-settings-tab")
-                    .ghost()
-                    .small()
-                    .label("任务设置")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
+                div()
+                    .id("x-assistant-task-settings-tab")
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        this.open_task_settings(cx);
+                    }))
+                    .px_2()
+                    .py_1()
+                    .text_size(px(12.))
+                    .child("任务设置"),
             )
             .child(
                 div()
