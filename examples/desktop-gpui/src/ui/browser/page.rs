@@ -49,6 +49,96 @@ enum StepKind {
 }
 
 #[derive(Clone)]
+struct BrowserPostTableDelegate {
+    columns: Vec<Column>,
+    records: Vec<binance_tools::db::x_posting::XPublishedPost>,
+}
+
+impl Default for BrowserPostTableDelegate {
+    fn default() -> Self {
+        Self {
+            columns: vec![
+                Column::new("id", "记录 ID").width(px(80.)),
+                Column::new("published_at", "发布时间（北京时间）").width(px(155.)),
+                Column::new("status", "发帖状态").width(px(105.)),
+                Column::new("content", "发布正文").width(px(360.)),
+                Column::new("url", "X 帖子链接").width(px(220.)),
+                Column::new("news_id", "新闻 ID").width(px(100.)),
+            ],
+            records: Vec::new(),
+        }
+    }
+}
+
+impl BrowserPostTableDelegate {
+    fn set_records(&mut self, records: Vec<binance_tools::db::x_posting::XPublishedPost>) {
+        self.records = records;
+    }
+}
+
+impl TableDelegate for BrowserPostTableDelegate {
+    fn columns_count(&self, _: &App) -> usize {
+        self.columns.len()
+    }
+
+    fn rows_count(&self, _: &App) -> usize {
+        self.records.len()
+    }
+
+    fn column(&self, col_ix: usize, _: &App) -> &Column {
+        &self.columns[col_ix]
+    }
+
+    fn render_td(
+        &mut self,
+        row_ix: usize,
+        col_ix: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let Some(record) = self.records.get(row_ix) else {
+            return div().size_full().into_any_element();
+        };
+        let key = self.columns[col_ix].key.as_ref();
+        let value = match key {
+            "id" => record.id.to_string(),
+            "published_at" => app_log::format_beijing_timestamp(
+                record.published_at.as_deref().unwrap_or(&record.created_at),
+            ),
+            "status" => match record.status.as_str() {
+                "published" => "已发布",
+                "pending" => "待发布",
+                "submitting" => "发布中",
+                "unknown" => "结果待确认",
+                "failed" => "发布失败",
+                other => other,
+            }.to_string(),
+            "content" => record.content.clone(),
+            "url" => record.x_post_url.clone().unwrap_or_default(),
+            "news_id" => record.news_id.clone().unwrap_or_default(),
+            _ => String::new(),
+        };
+        let color = match record.status.as_str() {
+            "published" => theme.success,
+            "failed" => palette::error_text(),
+            "unknown" | "submitting" => palette::muted(theme),
+            _ => palette::text(theme),
+        };
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .px_2()
+            .text_size(px(11.))
+            .text_color(if key == "status" { color } else { palette::text(theme) })
+            .truncate()
+            .child(value)
+            .into_any_element()
+    }
+}
+
+#[derive(Clone)]
 struct BrowserReplyTableDelegate {
     columns: Vec<Column>,
     records: Vec<binance_tools::db::x_assistant::XAssistantReplyRecord>,
@@ -160,6 +250,8 @@ pub struct BrowserAssistantPage {
     x_reply_rules: Entity<InputState>,
     browser_posts: Vec<binance_tools::db::x_posting::XPublishedPost>,
     browser_replies: Vec<binance_tools::db::x_assistant::XAssistantReplyRecord>,
+    browser_post_table: Entity<TableState<BrowserPostTableDelegate>>,
+    post_detail_hidden_row: Option<usize>,
     browser_reply_table: Entity<TableState<BrowserReplyTableDelegate>>,
     reply_detail_hidden_row: Option<usize>,
     history_error: Option<String>,
@@ -183,6 +275,11 @@ impl BrowserAssistantPage {
         });
         let x_settings = binance_tools::db::browser_assistant::load_task_settings_blocking()
             .unwrap_or_default();
+        let browser_post_table = cx.new(|cx| {
+            TableState::new(BrowserPostTableDelegate::default(), window, cx)
+                .col_movable(false)
+                .row_selectable(true)
+        });
         let browser_reply_table = cx.new(|cx| {
             TableState::new(BrowserReplyTableDelegate::default(), window, cx)
                 .col_movable(false)
@@ -208,6 +305,8 @@ impl BrowserAssistantPage {
             x_reply_rules,
             browser_posts: Vec::new(),
             browser_replies: Vec::new(),
+            browser_post_table,
+            post_detail_hidden_row: None,
             browser_reply_table,
             reply_detail_hidden_row: None,
             history_error: None,
@@ -312,10 +411,17 @@ impl BrowserAssistantPage {
         });
     }
 
-    fn reload_browser_post_history(&mut self) {
+    fn reload_browser_post_history(&mut self, cx: &mut Context<Self>) {
         self.history_error = None;
         match binance_tools::db::x_posting::list_browser_posts_blocking(500) {
-            Ok(records) => self.browser_posts = records,
+            Ok(records) => {
+                self.browser_posts = records.clone();
+                self.post_detail_hidden_row = self.browser_post_table.read(cx).selected_row();
+                self.browser_post_table.update(cx, |table, cx| {
+                    table.delegate_mut().set_records(records);
+                    table.refresh(cx);
+                });
+            }
             Err(error) => self.history_error = Some(format!("读取浏览器助手发帖历史失败：{error:#}")),
         }
     }
@@ -660,7 +766,7 @@ impl BrowserAssistantPage {
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.tab = tab;
                 match tab {
-                    BrowserTab::PostHistory => this.reload_browser_post_history(),
+                    BrowserTab::PostHistory => this.reload_browser_post_history(cx),
                     BrowserTab::ReplyHistory => this.reload_browser_reply_history(cx),
                     BrowserTab::AutoPost => this.history_error = None,
                     _ => {}
@@ -857,58 +963,221 @@ impl BrowserAssistantPage {
 
     fn render_post_history(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let rows = if self.browser_posts.is_empty() {
-            v_flex().p_3().child(
-                div().text_size(px(12.)).text_color(palette::muted(theme))
-                    .child("暂无浏览器助手发帖记录。"),
-            ).into_any_element()
-        } else {
-            v_flex().gap_2().children(self.browser_posts.iter().map(|record| {
-                let status = match record.status.as_str() {
-                    "published" => "已发布",
-                    "pending" => "待发布",
-                    "submitting" => "发布中",
-                    "unknown" => "结果待确认",
-                    "failed" => "发布失败",
-                    other => other,
-                };
-                let status_color = match record.status.as_str() {
-                    "published" => theme.success,
-                    "failed" => palette::error_text(),
-                    _ => palette::muted(theme),
-                };
-                v_flex().gap_2().rounded(px(7.)).border_1()
-                    .border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
-                    .child(h_flex().items_center().gap_2()
-                        .child(div().text_size(px(12.)).font_semibold().child(format!("发帖记录 #{}", record.id)))
-                        .child(div().text_size(px(11.)).font_semibold().text_color(status_color).child(status.to_string()))
-                        .child(div().flex_1())
-                        .child(div().text_size(px(11.)).text_color(palette::muted(theme))
-                            .child(app_log::format_beijing_timestamp(record.published_at.as_deref().unwrap_or(&record.created_at)))))
-                    .child(div().text_size(px(12.)).child(record.content.clone()))
-                    .when_some(record.x_post_url.clone(), |parent, url| {
-                        parent.child(div().text_size(px(11.)).text_color(palette::muted(theme)).child(url))
-                    })
-                    .when_some(record.last_error.clone(), |parent, error| {
-                        parent.child(div().text_size(px(11.)).text_color(palette::error_text()).child(error))
-                    })
-            })).into_any_element()
-        };
-        v_flex().size_full().min_h_0().gap_2()
-            .child(h_flex().items_center().justify_between()
-                .child(v_flex().gap_1()
-                    .child(div().text_size(px(15.)).font_semibold().child("浏览器助手 · 发帖历史"))
-                    .child(div().text_size(px(11.)).text_color(palette::muted(theme))
-                        .child(format!("共 {} 条记录，仅显示浏览器助手提交的帖子", self.browser_posts.len()))))
-                .child(Button::new("browser-post-history-refresh").small().outline().label("刷新")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.reload_browser_post_history();
-                        cx.notify();
-                    }))))
+        let table = self.browser_post_table.read(cx);
+        let records = &table.delegate().records;
+        let row_count = records.len();
+        let selected_row = table.selected_row();
+        let selected_record = selected_row
+            .filter(|row| self.post_detail_hidden_row != Some(*row))
+            .and_then(|row| records.get(row))
+            .cloned();
+
+        v_flex()
+            .size_full()
+            .min_h_0()
+            .gap_3()
+            .child(
+                v_flex()
+                    .gap_2()
+                    .p_3()
+                    .rounded(px(6.))
+                    .bg(palette::surface_strong(theme))
+                    .border_1()
+                    .border_color(palette::border(theme))
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(div().text_size(px(16.)).font_semibold().child("发帖历史"))
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(palette::muted(theme))
+                                            .child(format!("共 {row_count} 条记录，仅显示浏览器助手提交的帖子")),
+                                    ),
+                            )
+                            .child(
+                                Button::new("browser-post-history-refresh")
+                                    .small()
+                                    .outline()
+                                    .label("刷新")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.reload_browser_post_history(cx);
+                                        cx.notify();
+                                    })),
+                            ),
+                    ),
+            )
             .when_some(self.history_error.clone(), |parent, error| {
-                parent.child(div().text_size(px(11.)).text_color(palette::error_text()).child(error))
+                parent.child(
+                    div()
+                        .rounded(px(6.))
+                        .bg(palette::error_background())
+                        .px_3()
+                        .py_2()
+                        .text_size(px(12.))
+                        .text_color(palette::error_text())
+                        .child(error),
+                )
             })
-            .child(div().flex_1().min_h_0().overflow_y_scrollbar().child(rows))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .gap_3()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .size_full()
+                                    .overflow_hidden()
+                                    .when(row_count == 0, |parent| {
+                                        parent.child(
+                                            div()
+                                                .p_3()
+                                                .text_size(px(12.))
+                                                .text_color(palette::muted(theme))
+                                                .child("暂无浏览器助手发帖记录。"),
+                                        )
+                                    })
+                                    .when(row_count > 0, |parent| {
+                                        parent.child(
+                                            DataTable::new(&self.browser_post_table)
+                                                .stripe(true)
+                                                .bordered(true)
+                                                .scrollbar_visible(true, true),
+                                        )
+                                    }),
+                            ),
+                    )
+                    .when_some(selected_record, |row, record| {
+                        let row_index = selected_row.expect("selected record must have a selected row");
+                        let status = match record.status.as_str() {
+                            "published" => "已发布",
+                            "pending" => "待发布",
+                            "submitting" => "发布中 / 待核验",
+                            "unknown" => "结果待确认",
+                            "failed" => "发布失败",
+                            other => other,
+                        };
+                        row.child(
+                            v_flex()
+                                .w(px(380.))
+                                .min_w(px(340.))
+                                .h_full()
+                                .min_h_0()
+                                .gap_3()
+                                .p_3()
+                                .rounded(px(8.))
+                                .bg(palette::surface_strong(theme))
+                                .border_1()
+                                .border_color(palette::border(theme))
+                                .child(
+                                    h_flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .child(div().text_size(px(14.)).font_semibold().child("发帖记录详情"))
+                                        .child(
+                                            Button::new("browser-post-detail-close")
+                                                .small()
+                                                .outline()
+                                                .label("收起")
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.post_detail_hidden_row = Some(row_index);
+                                                    cx.notify();
+                                                })),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("记录 ID"))
+                                        .child(div().text_size(px(12.)).child(record.id.to_string())),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("发帖状态"))
+                                        .child(div().text_size(px(12.)).font_semibold().child(status)),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("创建时间（北京时间）"))
+                                        .child(div().text_size(px(12.)).child(app_log::format_beijing_timestamp(&record.created_at))),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("发布时间（北京时间）"))
+                                        .child(div().text_size(px(12.)).child(app_log::format_beijing_timestamp(record.published_at.as_deref().unwrap_or(&record.created_at)))),
+                                )
+                                .when_some(record.news_id.clone(), |parent, news_id| {
+                                    parent.child(
+                                        v_flex().gap_1()
+                                            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("新闻 ID"))
+                                            .child(div().text_size(px(12.)).child(news_id)),
+                                    )
+                                })
+                                .when_some(record.x_post_url.clone(), |parent, url| {
+                                    parent.child(
+                                        v_flex().gap_1()
+                                            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("X 帖子链接"))
+                                            .child(div().text_size(px(11.)).text_color(theme.info).child(url)),
+                                    )
+                                })
+                                .when_some(record.last_error.clone(), |parent, error| {
+                                    parent.child(
+                                        v_flex().gap_1()
+                                            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("错误信息"))
+                                            .child(div().text_size(px(11.)).text_color(palette::error_text()).child(error)),
+                                    )
+                                })
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .gap_1()
+                                        .child(div().text_size(px(12.)).font_semibold().child("发帖正文"))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_h_0()
+                                                .overflow_y_scrollbar()
+                                                .p_2()
+                                                .rounded(px(6.))
+                                                .bg(theme.background)
+                                                .text_size(px(12.))
+                                                .child(record.content.clone()),
+                                        ),
+                                ),
+                        )
+                    })
+                    .when(selected_record.is_none(), |row| {
+                        row.child(
+                            v_flex()
+                                .w(px(320.))
+                                .h_full()
+                                .justify_center()
+                                .items_center()
+                                .gap_2()
+                                .rounded(px(8.))
+                                .border_1()
+                                .border_color(palette::border(theme))
+                                .text_size(px(12.))
+                                .text_color(palette::muted(theme))
+                                .child("点击左侧表格记录")
+                                .child("在右侧查看完整发帖详情"),
+                        )
+                    }),
+            )
             .into_any_element()
     }
 
