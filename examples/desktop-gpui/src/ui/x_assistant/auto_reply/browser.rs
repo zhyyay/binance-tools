@@ -325,9 +325,13 @@ impl BrowserReplyRunner {
                     let name = stage.get("stage").and_then(Value::as_str).unwrap_or("unknown");
                     let elapsed_ms = stage.get("elapsed_ms").and_then(Value::as_u64).unwrap_or(0);
                     let typed_graphemes = stage.get("typed_graphemes").and_then(Value::as_u64);
+                    let target_post_id = stage.get("post_id").and_then(Value::as_str).unwrap_or("");
+                    let resolved_post_id = stage.get("resolved_post_id").and_then(Value::as_str).unwrap_or("");
+                    let target_author = stage.get("author_username").and_then(Value::as_str).unwrap_or("");
+                    let target_text = stage.get("post_text").and_then(Value::as_str).unwrap_or("");
                     automation::log_browser_event(&format!(
-                        "后台浏览器交互：步骤={}，耗时={}ms，输入字符数={:?}；未控制 Windows 系统鼠标。",
-                        name, elapsed_ms, typed_graphemes
+                        "后台浏览器交互：步骤={}，耗时={}ms，输入字符数={:?}，目标帖子 ID={}，DOM 核对 ID={}，作者=@{}，正文={}；未控制 Windows 系统鼠标。",
+                        name, elapsed_ms, typed_graphemes, target_post_id, resolved_post_id, target_author, target_text
                     ));
                 }
             } else {
