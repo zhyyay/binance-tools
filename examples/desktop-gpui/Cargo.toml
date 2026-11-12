@@ -19,8 +19,8 @@ icons = ["assets/app.ico"]
 [dependencies]
 anyhow = "1.0"
 app-log = { path = "../../crates/app-log" }
-browser-assistant-client = { git = "https://github.com/zhyyay/browser-assistant", rev = "fa04f39d3f1bbdb507db4af3dae26eb9bdcf77ce" }
-browser-core = { git = "https://github.com/zhyyay/browser-assistant", rev = "fa04f39d3f1bbdb507db4af3dae26eb9bdcf77ce" }
+browser-assistant-client = { git = "https://github.com/zhyyay/browser-assistant", rev = "27801e145691415bab166c0d18b4a6ae98e4cf75" }
+browser-core = { git = "https://github.com/zhyyay/browser-assistant", rev = "27801e145691415bab166c0d18b4a6ae98e4cf75" }
 binance_tools = { path = "../.." }
 crypto-rss = { path = "../../crates/crypto-rss" }
 evm-wallet = { path = "../../crates/evm-wallet" }
