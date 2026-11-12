@@ -1061,12 +1061,12 @@ impl BrowserAssistantPage {
                     .when_some(selected_record, |row, record| {
                         let row_index = selected_row.expect("selected record must have a selected row");
                         let status = match record.status.as_str() {
-                            "published" => "已发布",
-                            "pending" => "待发布",
-                            "submitting" => "发布中 / 待核验",
-                            "unknown" => "结果待确认",
-                            "failed" => "发布失败",
-                            other => other,
+                            "published" => "已发布".to_string(),
+                            "pending" => "待发布".to_string(),
+                            "submitting" => "发布中 / 待核验".to_string(),
+                            "unknown" => "结果待确认".to_string(),
+                            "failed" => "发布失败".to_string(),
+                            other => other.to_string(),
                         };
                         row.child(
                             v_flex()
