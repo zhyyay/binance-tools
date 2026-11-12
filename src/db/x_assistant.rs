@@ -385,7 +385,7 @@ mod tests {
             );",
         ).unwrap();
 
-        insert_reply_record(&connection, "uncertain-1", "Alice", "@alice", "刚刚", "帖子正文").unwrap();
+        insert_reply_record(&connection, "uncertain-1", None, "screenshot", "Alice", "@alice", "刚刚", "帖子正文").unwrap();
         connection.execute(
             "UPDATE x_assistant_reply_records SET send_status = 'uncertain' WHERE run_id = 'uncertain-1'",
             [],
@@ -423,7 +423,7 @@ mod tests {
             )
             .unwrap();
 
-        insert_reply_record(&connection, "run-1", "Alice", "@alice", "3分钟", "帖子正文").unwrap();
+        insert_reply_record(&connection, "run-1", None, "screenshot", "Alice", "@alice", "3分钟", "帖子正文").unwrap();
         save_reply_text(&connection, "run-1", "回复内容").unwrap();
         mark_completed(&connection, "run-1").unwrap();
         assert!(replied_to_account_within_day(&connection, "@alice").unwrap());
