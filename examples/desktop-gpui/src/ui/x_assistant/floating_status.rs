@@ -157,7 +157,7 @@ mod windows_overlay {
 
             let Ok(hwnd) = hwnd else {
                 app_log::x_warn!("悬浮状态：创建原生窗口失败");
-                DestroyIcon(icon);
+                let _ = DestroyIcon(icon);
                 ICON_HANDLE.store(0, Ordering::Release);
                 let _ = UnregisterClassW(class_name, Some(instance));
                 return;
@@ -199,7 +199,7 @@ mod windows_overlay {
             }
 
             let _ = DestroyWindow(hwnd);
-            DestroyIcon(icon);
+            let _ = DestroyIcon(icon);
             ICON_HANDLE.store(0, Ordering::Release);
             let _ = UnregisterClassW(class_name, Some(instance));
         }
