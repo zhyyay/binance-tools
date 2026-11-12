@@ -1062,34 +1062,37 @@ fn load_reply_rules() -> String {
 impl XAssistantPage {
     // 将每个按钮拆分到独立函数，避免在 GPUI render 回调中创建一个过大的临时栈帧。
     fn render_status_tab_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 菜单诊断：运行状态按钮 A，读取选中状态");
         let selected = self.show_run_status;
-        v_flex()
-            .w(px(112.))
-            .gap_1()
-            .child(
-                Button::new("x-assistant-status-tab")
-                    .ghost()
-                    .small()
-                    .label("运行状态")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                // 每次打开运行状态页都重新读取当天（北京时间）的日志，
-                // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
-                this.log_tail = Some(run_log::LogTail::new());
-                this.show_run_status = true;
-                this.show_reply_list = false;
-                this.show_post_history = false;
-                this.show_task_settings = false;
-                this.show_auto_post = false;
-                cx.notify();
-            })),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(2.))
-                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            )
-            .into_any_element()
+        app_log::info!("X 菜单诊断：运行状态按钮 B，创建 GPUI Button");
+        let button = Button::new("x-assistant-status-tab");
+        app_log::info!("X 菜单诊断：运行状态按钮 C，应用 ghost 样式");
+        let button = button.ghost();
+        app_log::info!("X 菜单诊断：运行状态按钮 D，应用 small 样式和标题");
+        let button = button.small().label("运行状态");
+        app_log::info!("X 菜单诊断：运行状态按钮 E，注册点击监听器");
+        let button = button.on_click(cx.listener(|this, _, _, cx| {
+            // 每次打开运行状态页都重新读取当天（北京时间）的日志，
+            // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
+            this.log_tail = Some(run_log::LogTail::new());
+            this.show_run_status = true;
+            this.show_reply_list = false;
+            this.show_post_history = false;
+            this.show_task_settings = false;
+            this.show_auto_post = false;
+            cx.notify();
+        }));
+        app_log::info!("X 菜单诊断：运行状态按钮 F，创建外层容器");
+        let container = v_flex().w(px(112.)).gap_1();
+        app_log::info!("X 菜单诊断：运行状态按钮 G，将 Button 放入容器");
+        let container = container.child(button);
+        app_log::info!("X 菜单诊断：运行状态按钮 H，创建选中指示条");
+        let indicator = div()
+            .w_full()
+            .h(px(2.))
+            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
+        app_log::info!("X 菜单诊断：运行状态按钮 I，将指示条放入容器");
+        container.child(indicator).into_any_element()
     }
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = !self.show_run_status && !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post;
