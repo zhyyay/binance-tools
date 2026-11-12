@@ -181,42 +181,68 @@ impl XAssistantPage {
     }
 
     fn start_all_automation(&mut self, cx: &mut Context<Self>) {
+        let auto_reply = self.task_settings.auto_reply_enabled;
+        let auto_post = self.task_settings.auto_post_enabled;
+
         app_log::x_info!(
-            "[全局开始] 进入 start_all_automation：replying={}，自动回复={}，自动发帖={}，自动发送={}",
-            self.replying,
-            self.task_settings.auto_reply_enabled,
-            self.task_settings.auto_post_enabled,
-            self.auto_send
+            "[全局开始] 进入：自动回复={}，自动发帖={}，自动发送={}，运行中={}",
+            auto_reply,
+            auto_post,
+            self.auto_send,
+            self.replying
         );
+
         if self.replying {
             app_log::x_warn!("[全局开始] 忽略启动请求：当前任务仍在运行");
             return;
         }
-        if self.task_settings.auto_post_enabled {
-            app_log::x_info!("[全局开始] 分流到 start_auto_post");
-            // 自动回复与自动发帖同时启用时，必须先完成自动回复首轮。
-            // 若自动发送被关闭，不允许静默退化为“启动后立即发帖”。
-            if self.task_settings.auto_reply_enabled && !self.auto_send {
-                app_log::x_warn!("[全局开始] 启动条件不满足：自动回复和自动发帖同时开启，但自动发送关闭");
+
+        // 四种开关组合必须分别有明确行为，不能依赖“某一个开关优先级”隐式分流：
+        // 00 = 不启动；10 = 只回复；01 = 只发帖；11 = 回复 + 发帖。
+        match (auto_reply, auto_post) {
+            (false, false) => {
+                app_log::x_warn!("[全局开始] 未启动：自动回复和自动发帖均已关闭");
                 self.error = None;
                 self.status = Some(
-                    "启动条件未满足：自动回复与自动发帖同时启用时，请先在自动回复页面开启「自动发送」，再启动自动化。".to_string(),
+                    "尚未配置自动化任务：请先在「任务设置」中开启自动回复或自动发帖。"
+                        .to_string(),
                 );
                 cx.notify();
-                return;
             }
-            self.start_auto_post(cx);
-            return;
+            (true, false) => {
+                app_log::x_info!("[全局开始] 模式=只自动回复");
+                if !self.auto_send {
+                    self.error = None;
+                    self.status = Some(
+                        "自动回复已开启，但「自动发送」关闭；请先开启自动发送后再启动。"
+                            .to_string(),
+                    );
+                    cx.notify();
+                    return;
+                }
+                self.start_visual_reply(false, true, true, cx);
+            }
+            (false, true) => {
+                app_log::x_info!("[全局开始] 模式=只自动发帖");
+                self.start_auto_post(cx);
+            }
+            (true, true) => {
+                app_log::x_info!("[全局开始] 模式=自动回复 + 自动发帖");
+                if !self.auto_send {
+                    app_log::x_warn!(
+                        "[全局开始] 启动条件不满足：回复和发帖同时开启，但自动发送关闭"
+                    );
+                    self.error = None;
+                    self.status = Some(
+                        "自动回复与自动发帖同时开启时，请先在自动回复页面开启「自动发送」，再启动自动化。"
+                            .to_string(),
+                    );
+                    cx.notify();
+                    return;
+                }
+                self.start_auto_post(cx);
+            }
         }
-        if !self.task_settings.auto_reply_enabled {
-            app_log::x_warn!("[全局开始] 未启动：自动回复和自动发帖均未开启");
-            self.error = None;
-            self.status = Some("尚未配置自动化任务：请先在「任务设置」中开启自动回复或自动发帖。".to_string());
-            cx.notify();
-            return;
-        }
-        app_log::x_info!("[全局开始] 分流到 start_visual_reply（全自动回复）");
-        self.start_visual_reply(false, true, true, cx);
     }
 
     fn start_auto_post(&mut self, cx: &mut Context<Self>) {
@@ -650,11 +676,28 @@ impl XAssistantPage {
     }
 
     fn toggle_task_setting(&mut self, setting: TaskSetting, cx: &mut Context<Self>) {
+        // 运行期间禁止修改调度开关。后台任务拿到的是启动时的快照，
+        // 如果允许运行中修改 UI 开关，会出现“界面显示关闭、后台仍继续执行”的状态分裂。
+        if self.replying {
+            app_log::x_warn!("[任务设置] 当前自动化正在运行，忽略运行期间的开关修改");
+            self.status = Some("自动化运行中不能修改任务开关，请先点击「停止」。".to_string());
+            cx.notify();
+            return;
+        }
+
         match setting {
-            TaskSetting::AutoReply => self.task_settings.auto_reply_enabled = !self.task_settings.auto_reply_enabled,
-            TaskSetting::AutoPost => self.task_settings.auto_post_enabled = !self.task_settings.auto_post_enabled,
-            TaskSetting::AutoComment => self.task_settings.auto_comment_enabled = !self.task_settings.auto_comment_enabled,
-            TaskSetting::OwnPostReply => self.task_settings.own_post_reply_enabled = !self.task_settings.own_post_reply_enabled,
+            TaskSetting::AutoReply => {
+                self.task_settings.auto_reply_enabled = !self.task_settings.auto_reply_enabled
+            }
+            TaskSetting::AutoPost => {
+                self.task_settings.auto_post_enabled = !self.task_settings.auto_post_enabled
+            }
+            TaskSetting::AutoComment => {
+                self.task_settings.auto_comment_enabled = !self.task_settings.auto_comment_enabled
+            }
+            TaskSetting::OwnPostReply => {
+                self.task_settings.own_post_reply_enabled = !self.task_settings.own_post_reply_enabled
+            }
         }
         self.persist_task_settings(cx);
     }
@@ -1134,22 +1177,39 @@ impl XAssistantPage {
 
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
+        let label = match (
+            self.task_settings.auto_reply_enabled,
+            self.task_settings.auto_post_enabled,
+        ) {
+            (true, true) => "开始回复 + 发帖",
+            (true, false) => "开始自动回复",
+            (false, true) => "开始自动发帖",
+            (false, false) => "开始",
+        };
+        let enabled = !self.replying
+            && (self.task_settings.auto_reply_enabled || self.task_settings.auto_post_enabled);
+
         div()
             .id("x-assistant-start-all-automation")
-            .cursor_pointer()
-            .when(!self.replying, |button| {
-                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                    app_log::x_info!("[全局开始按钮] 点击事件已触发");
-                    this.start_all_automation(cx);
-                }))
+            .when(enabled, |button| {
+                button
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        app_log::x_info!("[全局开始按钮] 点击事件已触发");
+                        this.start_all_automation(cx);
+                    }))
             })
             .rounded_full()
             .bg(palette::surface(theme))
-            .text_color(if self.replying { palette::muted(theme) } else { palette::text(theme) })
+            .text_color(if enabled {
+                palette::text(theme)
+            } else {
+                palette::muted(theme)
+            })
             .px_4()
             .py_1()
             .text_size(px(12.))
-            .child("开始")
+            .child(if self.replying { "运行中…" } else { label })
             .into_any_element()
     }
 
