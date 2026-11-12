@@ -1349,20 +1349,32 @@ impl XAssistantPage {
             })
             .into_any_element();
 
-        h_flex()
-            .items_end()
-            .gap_2()
-            .child(status_button)
-            .child(reply_flow_button)
-            .child(auto_post_button)
-            .child(reply_list_button)
-            .child(post_history_button)
-            .child(task_settings_button)
-            .child(div().flex_1())
-            .child(run_state)
-            .child(start_all_button)
-            .child(stop_all_button)
-            .into_any_element()
+        app_log::info!("X 菜单诊断：组装容器 A，创建 h_flex");
+        let menu = h_flex().items_end().gap_2();
+        app_log::info!("X 菜单诊断：组装容器 B，基础容器创建完成");
+        let menu = menu.child(status_button);
+        app_log::info!("X 菜单诊断：组装容器 C，已加入运行状态");
+        let menu = menu.child(reply_flow_button);
+        app_log::info!("X 菜单诊断：组装容器 D，已加入自动回复");
+        let menu = menu.child(auto_post_button);
+        app_log::info!("X 菜单诊断：组装容器 E，已加入自动发帖");
+        let menu = menu.child(reply_list_button);
+        app_log::info!("X 菜单诊断：组装容器 F，已加入回复列表");
+        let menu = menu.child(post_history_button);
+        app_log::info!("X 菜单诊断：组装容器 G，已加入发帖历史");
+        let menu = menu.child(task_settings_button);
+        app_log::info!("X 菜单诊断：组装容器 H，已加入任务设置");
+        let menu = menu.child(div().flex_1());
+        app_log::info!("X 菜单诊断：组装容器 I，已加入弹性占位");
+        let menu = menu.child(run_state);
+        app_log::info!("X 菜单诊断：组装容器 J，已加入运行状态指示");
+        let menu = menu.child(start_all_button);
+        app_log::info!("X 菜单诊断：组装容器 K，已加入全局开始");
+        let menu = menu.child(stop_all_button);
+        app_log::info!("X 菜单诊断：组装容器 L，已加入全局停止");
+        let menu = menu.into_any_element();
+        app_log::info!("X 菜单诊断：组装容器 M，转换为 AnyElement 完成");
+        menu
     }
 }
 
