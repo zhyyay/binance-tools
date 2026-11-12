@@ -1194,18 +1194,23 @@ impl XAssistantPage {
     }
 
     fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 菜单诊断：全局停止按钮 A，读取主题和运行状态");
         let theme = cx.theme();
-        Button::new("x-assistant-stop-all-automation")
-            .label("停止")
-            .small()
+        let replying = self.replying;
+        app_log::info!("X 菜单诊断：全局停止按钮 B，创建普通 div");
+        let button = div()
+            .id("x-assistant-stop-all-automation")
             .rounded_full()
             .bg(palette::surface(theme))
             .text_color(palette::text(theme))
             .px_4()
-            .disabled(!self.replying)
-            .tooltip("中断自动化")
-            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
-            .into_any_element()
+            .py_1()
+            .when(!replying, |this| this.opacity(0.5))
+            .child("停止");
+        app_log::info!("X 菜单诊断：全局停止按钮 C，普通 div 已创建");
+        let button = button.into_any_element();
+        app_log::info!("X 菜单诊断：全局停止按钮 D，转换为 AnyElement，构建完成");
+        button
     }
 
     fn render_reply_list_button(&self, cx: &mut Context<Self>) -> AnyElement {
