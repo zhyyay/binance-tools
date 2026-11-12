@@ -971,6 +971,7 @@ impl BrowserAssistantPage {
             .filter(|row| self.post_detail_hidden_row != Some(*row))
             .and_then(|row| records.get(row))
             .cloned();
+        let has_selected_record = selected_record.is_some();
 
         v_flex()
             .size_full()
@@ -1160,7 +1161,7 @@ impl BrowserAssistantPage {
                                 ),
                         )
                     })
-                    .when(selected_record.is_none(), |row| {
+                    .when(!has_selected_record, |row| {
                         row.child(
                             v_flex()
                                 .w(px(320.))
