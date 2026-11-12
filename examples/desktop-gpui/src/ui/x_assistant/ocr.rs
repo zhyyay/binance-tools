@@ -1142,21 +1142,6 @@ pub(super) fn locate_new_posts_notice(path: &Path) -> anyhow::Result<Option<(i32
         .next())
 }
 
-pub(super) fn reply_composer_is_open(path: &Path) -> anyhow::Result<bool> {
-    let crop = crop_compose_dialog(path)?;
-    let doc = recognize_document_image(
-        &image::DynamicImage::ImageRgba8(crop.image.clone()),
-        4,
-        3,
-        Some(200),
-    )?;
-    let expected = normalize_text("发布你的回复");
-    Ok(doc
-        .lines
-        .iter()
-        .any(|line| text_match_ratio(&normalize_text(&line.text), &expected) >= 0.75))
-}
-
 pub(super) fn recognize_save_draft_confirmation(path: &Path) -> anyhow::Result<bool> {
     let doc = recognize_document(path)?;
     Ok(doc.lines.iter().any(|line| {
