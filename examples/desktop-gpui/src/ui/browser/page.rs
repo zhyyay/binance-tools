@@ -123,6 +123,17 @@ impl BrowserAssistantPage {
         }
     }
 
+    fn log_error(&mut self, message: impl Into<String>) {
+        let stamp = app_log::beijing_now().format("%H:%M:%S").to_string();
+        let message = message.into();
+        app_log::error!("[浏览器助手] {message}");
+        self.logs.push(format!("[{stamp}] [ERROR] {message}"));
+        if self.logs.len() > 300 {
+            let excess = self.logs.len() - 300;
+            self.logs.drain(0..excess);
+        }
+    }
+
     fn add_step(&mut self, kind: StepKind, cx: &mut Context<Self>) {
         let selector = self.selector.read(cx).text().to_string().trim().to_string();
         let selector = if selector.is_empty() { "body".to_string() } else { selector };
@@ -190,7 +201,7 @@ impl BrowserAssistantPage {
                     Err(error) => {
                         this.status = "连接失败".into();
                         this.error = Some(format!("{error:#}"));
-                        this.log(format!("连接失败：{error:#}"));
+                        this.log_error(format!("连接失败：{error:#}"));
                         this.failed_count += 1;
                     }
                 }
@@ -387,7 +398,7 @@ impl BrowserAssistantPage {
                         failure = Some(format!("{}：{error:#}", label));
                         let message = failure.clone().unwrap_or_default();
                         let _ = this.update(cx, |this, cx| {
-                            this.log(format!("{}：失败", label));
+                            this.log_error(format!("{}：失败：{error:#}", label));
                             this.error = Some(message);
                             cx.notify();
                         });
@@ -409,7 +420,7 @@ impl BrowserAssistantPage {
                         this.status = "任务异常".into();
                         this.failed_count += 1;
                         this.error = Some(error.clone());
-                        this.log(format!("任务异常：{error}"));
+                        this.log_error(format!("任务异常：{error}"));
                         this.history.insert(0, format!("{} | 失败：{error}", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S")));
                     }
                 } else {
