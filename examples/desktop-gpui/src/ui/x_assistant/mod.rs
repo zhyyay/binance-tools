@@ -737,15 +737,19 @@ impl XAssistantPage {
         let enabled = self.task_settings.auto_reply_enabled;
         div()
             .id("x-task-auto-reply")
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+            .when(!self.replying, |button| {
+                button.cursor_pointer()
+            })
+            .when(!self.replying, |button| {
+                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击自动回复开关");
                 this.toggle_task_setting(TaskSetting::AutoReply, cx);
             }))
+            })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
             .bg(if enabled { gpui::hsla(0.59, 0.42, 0.92, 1.0) } else { palette::surface(cx.theme()) })
-            .text_color(palette::text(cx.theme()))
+            .text_color(if self.replying { palette::muted(cx.theme()) } else { palette::text(cx.theme()) })
             .text_size(px(12.))
             .child(if enabled { "自动回复调度：开" } else { "自动回复调度：关" })
             .into_any_element()
@@ -755,15 +759,19 @@ impl XAssistantPage {
         let enabled = self.task_settings.auto_post_enabled;
         div()
             .id("x-task-auto-post")
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+            .when(!self.replying, |button| {
+                button.cursor_pointer()
+            })
+            .when(!self.replying, |button| {
+                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击自动发帖开关");
                 this.toggle_task_setting(TaskSetting::AutoPost, cx);
             }))
+            })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
             .bg(if enabled { gpui::hsla(0.59, 0.42, 0.92, 1.0) } else { palette::surface(cx.theme()) })
-            .text_color(palette::text(cx.theme()))
+            .text_color(if self.replying { palette::muted(cx.theme()) } else { palette::text(cx.theme()) })
             .text_size(px(12.))
             .child(if enabled { "自动发帖：开" } else { "自动发帖：关" })
             .into_any_element()
@@ -773,15 +781,19 @@ impl XAssistantPage {
         let enabled = self.task_settings.auto_comment_enabled;
         div()
             .id("x-task-auto-comment")
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+            .when(!self.replying, |button| {
+                button.cursor_pointer()
+            })
+            .when(!self.replying, |button| {
+                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击自动评论开关");
                 this.toggle_task_setting(TaskSetting::AutoComment, cx);
             }))
+            })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
             .bg(if enabled { gpui::hsla(0.59, 0.42, 0.92, 1.0) } else { palette::surface(cx.theme()) })
-            .text_color(palette::text(cx.theme()))
+            .text_color(if self.replying { palette::muted(cx.theme()) } else { palette::text(cx.theme()) })
             .text_size(px(12.))
             .child(if enabled { "发布后自动评论：开" } else { "发布后自动评论：关" })
             .into_any_element()
@@ -791,15 +803,19 @@ impl XAssistantPage {
         let enabled = self.task_settings.own_post_reply_enabled;
         div()
             .id("x-task-own-post-reply")
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+            .when(!self.replying, |button| {
+                button.cursor_pointer()
+            })
+            .when(!self.replying, |button| {
+                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击回复自己帖子评论开关");
                 this.toggle_task_setting(TaskSetting::OwnPostReply, cx);
             }))
+            })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
             .bg(if enabled { gpui::hsla(0.59, 0.42, 0.92, 1.0) } else { palette::surface(cx.theme()) })
-            .text_color(palette::text(cx.theme()))
+            .text_color(if self.replying { palette::muted(cx.theme()) } else { palette::text(cx.theme()) })
             .text_size(px(12.))
             .child(if enabled { "回复自己帖子评论：开（预留）" } else { "回复自己帖子评论：关（预留）" })
             .into_any_element()
