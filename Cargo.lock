@@ -947,7 +947,7 @@ dependencies = [
 [[package]]
 name = "browser-assistant-client"
 version = "0.1.0"
-source = "git+https://github.com/zhyyay/browser-assistant?rev=27801e145691415bab166c0d18b4a6ae98e4cf75#27801e145691415bab166c0d18b4a6ae98e4cf75"
+source = "git+https://github.com/zhyyay/browser-assistant?rev=350859d1c1334531f78f26142c2fd8053e887f43#350859d1c1334531f78f26142c2fd8053e887f43"
 dependencies = [
  "anyhow",
  "browser-core",
@@ -958,7 +958,7 @@ dependencies = [
 [[package]]
 name = "browser-core"
 version = "0.1.0"
-source = "git+https://github.com/zhyyay/browser-assistant?rev=27801e145691415bab166c0d18b4a6ae98e4cf75#27801e145691415bab166c0d18b4a6ae98e4cf75"
+source = "git+https://github.com/zhyyay/browser-assistant?rev=350859d1c1334531f78f26142c2fd8053e887f43#350859d1c1334531f78f26142c2fd8053e887f43"
 dependencies = [
  "anyhow",
  "serde",
