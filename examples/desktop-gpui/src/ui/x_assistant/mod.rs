@@ -1144,26 +1144,38 @@ impl XAssistantPage {
         app_log::info!("X 菜单诊断：自动回复按钮构建完成");
         element
     }
-    fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_auto_post_button(&self, _cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 菜单诊断：自动发帖按钮 A，读取选中状态");
         let selected = self.show_auto_post;
-        v_flex()
-            .w(px(112.))
-            .gap_1()
-            .child(
-                Button::new("x-assistant-auto-post-tab")
-                    .ghost()
-                    .small()
-                    .label("自动发帖")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(2.))
-                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            )
-            .into_any_element()
+
+        app_log::info!("X 菜单诊断：自动发帖按钮 B，创建外层容器");
+        let container = v_flex().w(px(112.)).gap_1();
+
+        // 临时使用普通 div 隔离 GPUI Button，确认崩溃是否由 Button 组件引起。
+        app_log::info!("X 菜单诊断：自动发帖按钮 C，使用普通 div 替代 Button");
+        let container = container.child(
+            div()
+                .px_2()
+                .py_1()
+                .child("自动发帖（临时诊断）"),
+        );
+        app_log::info!("X 菜单诊断：自动发帖按钮 D，普通 div 已放入容器");
+
+        app_log::info!("X 菜单诊断：自动发帖按钮 E，创建选中指示条");
+        let indicator = div().w_full().h(px(2.));
+        app_log::info!("X 菜单诊断：自动发帖按钮 F，应用选中状态样式");
+        let indicator = indicator.when(selected, |line| {
+            line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))
+        });
+
+        app_log::info!("X 菜单诊断：自动发帖按钮 G，将指示条放入容器");
+        let container = container.child(indicator);
+        app_log::info!("X 菜单诊断：自动发帖按钮 H，转换为 AnyElement");
+        let element = container.into_any_element();
+        app_log::info!("X 菜单诊断：自动发帖按钮构建完成");
+        element
     }
+
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         Button::new("x-assistant-start-all-automation")
