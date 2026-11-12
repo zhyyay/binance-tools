@@ -322,74 +322,153 @@ impl Render for ReplyListPage {
                 )
             })
             .child(
-                v_flex().flex_1().h_full().min_h(px(180.)).w_full().child(
-                    div().flex_1().size_full().overflow_hidden().child(
-                        DataTable::new(&self.table)
-                            .stripe(true)
-                            .bordered(true)
-                            .scrollbar_visible(true, true),
-                    ),
-                ),
-            )
-            .when_some(selected_record, |parent, record| {
-                parent.child(
-                    v_flex()
-                        .h(px(260.))
-                        .min_h(px(180.))
-                        .gap_2()
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(palette::border(theme))
-                        .bg(palette::surface_strong(theme))
-                        .p_3()
-                        .child(
-                            h_flex()
-                                .items_center()
-                                .justify_between()
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .gap_3()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .child(
+                                div().flex_1().size_full().overflow_hidden().child(
+                                    DataTable::new(&self.table)
+                                        .stripe(true)
+                                        .bordered(true)
+                                        .scrollbar_visible(true, true),
+                                ),
+                            ),
+                    )
+                    .when_some(selected_record, |row, record| {
+                        row.child(
+                            v_flex()
+                                .w(px(380.))
+                                .min_w(px(340.))
+                                .h_full()
+                                .min_h_0()
+                                .gap_3()
+                                .p_3()
+                                .rounded(px(8.))
+                                .bg(palette::surface_strong(theme))
+                                .border_1()
+                                .border_color(palette::border(theme))
                                 .child(
-                                    div()
-                                        .text_size(px(14.))
-                                        .font_semibold()
-                                        .child("帖子正文（完整内容）"),
+                                    h_flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .child(
+                                            div()
+                                                .text_size(px(14.))
+                                                .font_semibold()
+                                                .child("回复记录详情"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(10.))
+                                                .text_color(palette::muted(theme))
+                                                .child(format!("{} 字符", record.post_text.chars().count())),
+                                        ),
                                 )
                                 .child(
-                                    div()
-                                        .text_size(px(11.))
-                                        .text_color(palette::muted(theme))
-                                        .child(format!(
-                                            "{} 字符 · {}",
-                                            record.post_text.chars().count(),
-                                            record.account_handle
-                                        )),
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("发帖人 / 账号"))
+                                        .child(div().text_size(px(12.)).child(format!("{}  ·  {}", record.author_name, record.account_handle))),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("运行时间（北京时间）"))
+                                        .child(div().text_size(px(12.)).child(app_log::format_beijing_timestamp(&record.created_at))),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("原帖发布时间（北京时间）"))
+                                        .child(div().text_size(px(12.)).child(app_log::format_beijing_timestamp(&record.posted_at_text))),
+                                )
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .child(
+                                            v_flex()
+                                                .flex_1()
+                                                .gap_1()
+                                                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("最后一步完成"))
+                                                .child(div().text_size(px(12.)).child(if record.completed_last_step { "是" } else { "否" })),
+                                        )
+                                        .child(
+                                            v_flex()
+                                                .flex_1()
+                                                .gap_1()
+                                                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("发送状态"))
+                                                .child(div().text_size(px(12.)).child(match record.send_status.as_str() {
+                                                    "pending" => "待提交",
+                                                    "submitting" => "提交中 / 待核验",
+                                                    "sent" => "已发送",
+                                                    "duplicate" => "已发送过",
+                                                    "failed" => "发送失败",
+                                                    "uncertain" => "待人工核验",
+                                                    _ => "未知",
+                                                })),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .gap_1()
+                                        .child(div().text_size(px(12.)).font_semibold().child("原帖正文"))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_h_0()
+                                                .overflow_y_scrollbar()
+                                                .p_2()
+                                                .rounded(px(6.))
+                                                .bg(theme.background)
+                                                .text_size(px(12.))
+                                                .child(record.post_text.clone()),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .gap_1()
+                                        .child(div().text_size(px(12.)).font_semibold().child("AI 生成回复"))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_h_0()
+                                                .overflow_y_scrollbar()
+                                                .p_2()
+                                                .rounded(px(6.))
+                                                .bg(theme.background)
+                                                .text_size(px(12.))
+                                                .child(record.reply_text.clone()),
+                                        ),
                                 ),
                         )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_h_0()
-                                .overflow_y_scrollbar()
-                                .text_size(px(13.))
-                                .child(record.post_text),
-                        )
-                        .child(
-                            div()
+                    })
+                    .when(!has_selected_record, |row| {
+                        row.child(
+                            v_flex()
+                                .w(px(320.))
+                                .h_full()
+                                .justify_center()
+                                .items_center()
+                                .gap_2()
+                                .rounded(px(8.))
+                                .border_1()
+                                .border_color(palette::border(theme))
                                 .text_size(px(12.))
                                 .text_color(palette::muted(theme))
-                                .child(format!("生成回复：{}", record.reply_text)),
-                        ),
-                )
-            })
-            .when(!has_selected_record, |parent| {
-                parent.child(
-                    div()
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(palette::border(theme))
-                        .p_3()
-                        .text_size(px(12.))
-                        .text_color(palette::muted(theme))
-                        .child("点击一行记录，在此查看完整帖子正文和生成回复。"),
-                )
-            })
+                                .child("点击左侧表格记录")
+                                .child("在右侧查看完整帖子和回复详情"),
+                        )
+                    }),
+            )
     }
 }
