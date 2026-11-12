@@ -97,6 +97,28 @@ pub fn run(
     Ok((reply_count, post_count))
 }
 
+/// Return the complete parsed X timeline JSON to the Rust caller.
+////
+//// The returned value contains page metadata, count, requested_limit, and posts.
+pub fn get_timeline_json(
+    client: &mut BrowserClient,
+    limit: Option<usize>,
+) -> anyhow::Result<Value> {
+    ensure_x_home(client)?;
+    let response = client.execute(BrowserCommand::GetXPosts { limit })?;
+    if !response.ok {
+        let message = response.error.unwrap_or_else(|| "读取 X 时间线失败".to_string());
+        if is_rate_limited(&message) {
+            bail!("RATE_LIMITED: {message}");
+        }
+        bail!("{message}");
+    }
+
+    response
+        .result
+        .context("浏览器助手没有返回解析后的 X 时间线 JSON")
+}
+
 fn ensure_x_home(client: &mut BrowserClient) -> anyhow::Result<()> {
     let response = client.execute(BrowserCommand::GetPageInfo)?;
     anyhow::ensure!(response.ok, "读取浏览器当前页面失败：{}", response.error.unwrap_or_default());
@@ -116,21 +138,9 @@ fn run_reply_round(
     cancel: &AtomicBool,
 ) -> anyhow::Result<bool> {
     check_cancel(cancel)?;
-    // The active Chrome tab can change while automation is running.
-    // Revalidate the target page before every timeline read.
-    ensure_x_home(client)?;
-    let response = client.execute(BrowserCommand::GetXPosts { limit: Some(50) })?;
-    if !response.ok {
-        let message = response.error.unwrap_or_else(|| "读取 X 时间线失败".to_string());
-        if is_rate_limited(&message) {
-            bail!("RATE_LIMITED: {message}");
-        }
-        bail!("{message}");
-    }
-
-    let posts = response
-        .result
-        .unwrap_or(Value::Null)
+    // Return the complete parsed JSON first; the reply worker only consumes its posts array.
+    let timeline_json = get_timeline_json(client, Some(50))?;
+    let posts = timeline_json
         .get("posts")
         .and_then(Value::as_array)
         .cloned()
