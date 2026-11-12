@@ -57,7 +57,7 @@ pub fn run(
             wait_reply_capacity(cancel, settings.per_minute_reply_limit)?;
             let result = match run_reply_round(&mut client, &reply_options, cancel) {
                 Ok(value) => value,
-                Err(error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
+                Err(_error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
                 Err(error) => return Err(error),
             };
             if result {
@@ -67,7 +67,7 @@ pub fn run(
                 rounds_since_post += 1;
                 match scroll_timeline(&mut client, cancel) {
                     Ok(()) => {}
-                    Err(error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
+                    Err(_error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
                     Err(error) => return Err(error),
                 }
             }
@@ -81,7 +81,7 @@ pub fn run(
                 match run_post_round(&mut client, settings.auto_post_news_type.as_str(), cancel) {
                     Ok(true) => post_count += 1,
                     Ok(false) => {}
-                    Err(error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
+                    Err(_error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
                     Err(error) => return Err(error),
                 }
             }
