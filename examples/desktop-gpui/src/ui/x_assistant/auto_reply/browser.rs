@@ -2,7 +2,12 @@
 //!
 //! 帖子解析、回复框定位、输入、提交和发送提示核验均由扩展完成；
 //! Rust 侧只负责筛选、AI 回复生成、去重和发送状态持久化。
-use std::{sync::atomic::{AtomicBool, Ordering}, time::{Duration, Instant}};
+use std::{
+    collections::hash_map::RandomState,
+    hash::{BuildHasher, Hasher},
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, bail};
 use browser_assistant_client::BrowserClient;
@@ -64,29 +69,62 @@ impl BrowserReplyRunner {
             self.last_refresh_at = Some(now);
         }
         if should_refresh {
-            automation::log_browser_event("自动回复：运行已满 5 分钟，刷新独立 X 自动化页面（等同 F5）。");
-            let reload_result = client.execute(BrowserCommand::ReloadPage);
-            let reload_ok = matches!(&reload_result, Ok(response) if response.ok);
-            if !reload_ok {
-                let reason = match reload_result {
-                    Ok(response) => response.error.unwrap_or_else(|| "刷新命令未成功".into()),
+            // 使用标准库随机种子在两种页面恢复方式中二选一，避免固定执行同一种操作。
+            let choose_f5 = RandomState::new().build_hasher().finish() % 2 == 0;
+            let (method, result) = if choose_f5 {
+                (
+                    "F5 刷新",
+                    client.execute(BrowserCommand::ReloadPage),
+                )
+            } else {
+                (
+                    "点击 X 主页",
+                    client.execute(BrowserCommand::Click {
+                        selector: "a[href='/home']".into(),
+                    }),
+                )
+            };
+
+            automation::log_browser_event(&format!(
+                "自动回复：运行已满 5 分钟，本次随机选择使用 {method} 恢复独立 X 自动化页面。"
+            ));
+
+            let method_ok = matches!(&result, Ok(response) if response.ok);
+            if !method_ok {
+                let reason = match result {
+                    Ok(response) => response.error.unwrap_or_else(|| "操作未成功".into()),
                     Err(error) => format!("{error:#}"),
                 };
                 automation::log_browser_event(&format!(
-                    "自动回复：F5 刷新失败，尝试点击 X 主页恢复：{reason}"
+                    "自动回复：随机选择的 {method} 失败：{reason}；尝试另一种恢复方式。"
                 ));
-                let home = client.execute(BrowserCommand::Click {
-                    selector: "a[href='/home']".into(),
-                })?;
-                anyhow::ensure!(home.ok, "刷新失败且点击 X 主页也失败：{}", home.error.unwrap_or_default());
+                let fallback = if choose_f5 {
+                    client.execute(BrowserCommand::Click {
+                        selector: "a[href='/home']".into(),
+                    })
+                } else {
+                    client.execute(BrowserCommand::ReloadPage)
+                };
+                let fallback_name = if choose_f5 { "点击 X 主页" } else { "F5 刷新" };
+                let fallback = fallback?;
+                anyhow::ensure!(
+                    fallback.ok,
+                    "随机选择的 {method} 及备用方式 {fallback_name} 均失败：{}",
+                    fallback.error.unwrap_or_default()
+                );
+                automation::log_browser_event(&format!(
+                    "自动回复：备用恢复方式 {fallback_name} 执行成功。"
+                ));
             }
+
+            // 等待页面恢复，再重新读取 DOM 和时间线。
             for _ in 0..20 {
                 check_cancel(cancel)?;
                 std::thread::sleep(Duration::from_millis(250));
             }
             self.last_refresh_at = Some(Instant::now());
             self.batch_replies = 0;
-            automation::log_browser_event("自动回复：页面刷新/主页恢复等待完成，重新解析最新时间线。");
+            automation::log_browser_event("自动回复：页面恢复等待完成，重新解析最新时间线。");
         }
 
         check_cancel(cancel)?;
