@@ -394,6 +394,16 @@ fn run_reply_round(
             let reason = response.error.unwrap_or_else(|| "浏览器插件回复命令失败".into());
             if is_pre_submit_reply_error(&reason) {
                 x_assistant::mark_reply_failed_blocking(&run_id, &reason)?;
+                if is_target_post_resolution_error(&reason) {
+                    app_log::x_info!(
+                        "浏览器助手：[自动回复] 当前帖子定位校验失败，确认未点击发送按钮；跳过当前帖子并继续下一条：post_id={}，作者={}，账号={}，原因={}",
+                        post_id,
+                        author_name,
+                        account,
+                        reason
+                    );
+                    continue;
+                }
                 app_log::x_info!(
                     "浏览器助手：[回复] post_id={} 提交前检查失败，确认未点击发送按钮：{}",
                     post_id,
@@ -573,6 +583,9 @@ fn is_pre_submit_reply_error(message: &str) -> bool {
         "POST_NOT_FOUND",
         "REPLY_BUTTON_NOT_FOUND",
         "REPLY_BUTTON_OUTSIDE_VIEWPORT",
+        "POST_ID_VERIFY_FAILED",
+        "POST_NOT_FOUND_OR_AMBIGUOUS",
+        "POST_ID_CHANGED_AFTER_SCROLL",
         "REPLY_DIALOG_NOT_FOUND",
         "REPLY_EDITOR_NOT_FOUND",
         "REPLY_EDITOR_DISABLED",
@@ -580,6 +593,19 @@ fn is_pre_submit_reply_error(message: &str) -> bool {
         "REPLY_CONTENT_VERIFY_FAILED",
         "REPLY_COMPOSER_CLOSE_FAILED",
         "REPLY_SUBMIT_BUTTON_NOT_FOUND",
+    ];
+    ERROR_CODES.iter().any(|code| message.contains(code))
+}
+
+/// These failures happen before the reply button is clicked. The target
+/// cannot be identified safely, so skip only this post and continue the scan.
+fn is_target_post_resolution_error(message: &str) -> bool {
+    const ERROR_CODES: &[&str] = &[
+        "POST_ID_VERIFY_FAILED",
+        "POST_NOT_FOUND_OR_AMBIGUOUS",
+        "POST_ID_CHANGED_AFTER_SCROLL",
+        "REPLY_BUTTON_NOT_FOUND",
+        "REPLY_BUTTON_OUTSIDE_VIEWPORT",
     ];
     ERROR_CODES.iter().any(|code| message.contains(code))
 }
@@ -618,6 +644,16 @@ mod tests {
         ));
         assert!(!super::is_pre_submit_reply_error(
             "Native Host disconnected during command"
+        ));
+    }
+
+    #[test]
+    fn target_post_resolution_failure_is_pre_submit_and_skips_only_current_post() {
+        let message = "POST_ID_VERIFY_FAILED: expected=2120920840820994069 resolved=missing";
+        assert!(super::is_pre_submit_reply_error(message));
+        assert!(super::is_target_post_resolution_error(message));
+        assert!(!super::is_target_post_resolution_error(
+            "SEND_UNCERTAIN: Native Host disconnected during reply submission"
         ));
     }
 
