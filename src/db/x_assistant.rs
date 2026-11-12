@@ -105,6 +105,55 @@ pub fn reply_capacity_wait_seconds_blocking(limit: u8) -> anyhow::Result<Option<
     Ok(Some(60_u64.saturating_sub(oldest_age.max(0) as u64).max(1)))
 }
 
+/// Counts confirmed replies for one automation client during the current Beijing day.
+pub fn today_sent_reply_count_by_method_blocking(method: &str) -> anyhow::Result<u64> {
+    let connection = super::open_default_connection()?;
+    let count: i64 = connection.query_row(
+        "SELECT COUNT(*)
+         FROM x_assistant_reply_records
+         WHERE reply_method = ?1
+           AND send_status = 'sent'
+           AND completed_last_step = 1
+           AND completed_at IS NOT NULL
+           AND date(completed_at) = date('now', '+8 hours')",
+        [method],
+        |row| row.get(0),
+    )?;
+    Ok(count.max(0) as u64)
+}
+
+/// Applies a rolling 60-second send limit independently to one automation client.
+pub fn reply_capacity_wait_seconds_by_method_blocking(
+    method: &str,
+    limit: u8,
+) -> anyhow::Result<Option<u64>> {
+    let connection = super::open_default_connection()?;
+    let (count, oldest_age): (i64, i64) = connection.query_row(
+        "SELECT
+            COUNT(*),
+            COALESCE(
+                CAST(strftime('%s', datetime('now', '+8 hours')) AS INTEGER)
+                - CAST(strftime('%s', MIN(completed_at)) AS INTEGER),
+                0
+            )
+         FROM x_assistant_reply_records
+         WHERE reply_method = ?1
+           AND send_status = 'sent'
+           AND completed_last_step = 1
+           AND completed_at IS NOT NULL
+           AND completed_at >= datetime('now', '+8 hours', '-1 minute')
+           AND completed_at <= datetime('now', '+8 hours')",
+        params![method],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    if count < i64::from(limit.clamp(1, 60)) {
+        return Ok(None);
+    }
+
+    Ok(Some(60_u64.saturating_sub(oldest_age.max(0) as u64).max(1)))
+}
+
 pub fn delete_reply_records_older_than_three_days_blocking() -> anyhow::Result<usize> {
     let connection = super::open_default_connection()?;
     connection
