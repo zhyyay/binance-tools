@@ -175,11 +175,21 @@ impl BrowserReplyRunner {
                 Ok(response) => {
                     let reason = response.error.unwrap_or_else(|| "插件回复命令失败".into());
                     let _ = binance_tools::db::x_assistant::mark_reply_uncertain_blocking(&run_id, &reason);
+                    app_log::x_browser_warn!(
+                        "[回复] post_id={} 最终状态=待核验 | 原因={}",
+                        post_id,
+                        reason
+                    );
                     return Err(anyhow::Error::new(vision::SendOutcomeUncertain).context(reason));
                 }
                 Err(error) => {
                     let reason = format!("浏览器插件回复命令返回异常：{error:#}");
                     let _ = binance_tools::db::x_assistant::mark_reply_uncertain_blocking(&run_id, &reason);
+                    app_log::x_browser_warn!(
+                        "[回复] post_id={} 最终状态=待核验 | 原因={}",
+                        post_id,
+                        reason
+                    );
                     return Err(anyhow::Error::new(vision::SendOutcomeUncertain).context(reason));
                 }
             };
@@ -224,6 +234,12 @@ impl BrowserReplyRunner {
                         let _ = binance_tools::db::x_assistant::mark_reply_uncertain_blocking(&run_id, &reason);
                         return Err(anyhow::Error::new(vision::SendOutcomeUncertain).context(reason));
                     }
+                    app_log::x_browser_info!(
+                        "[回复] post_id={} 最终状态=已发送成功 | 确认来源={} | created_tweet_id={}",
+                        post_id,
+                        confirmation_source,
+                        created_tweet_id
+                    );
                     automation::log_browser_event(&format!(
                         "浏览器插件：推文 ID={} 回复已发送并收到成功确认。",
                         post_id
@@ -244,11 +260,21 @@ impl BrowserReplyRunner {
                     let reason = sent.get("message").and_then(Value::as_str)
                         .unwrap_or("点击提交后未检测到明确成功提示").to_string();
                     binance_tools::db::x_assistant::mark_reply_uncertain_blocking(&run_id, &reason)?;
+                    app_log::x_browser_warn!(
+                        "[回复] post_id={} 最终状态=待核验 | 原因={}",
+                        post_id,
+                        reason
+                    );
                     return Err(anyhow::Error::new(vision::SendOutcomeUncertain).context(reason));
                 }
                 other => {
                     let reason = format!("浏览器插件返回未知发送状态：{other:?}；{sent}");
                     binance_tools::db::x_assistant::mark_reply_uncertain_blocking(&run_id, &reason)?;
+                    app_log::x_browser_warn!(
+                        "[回复] post_id={} 最终状态=待核验 | 原因={}",
+                        post_id,
+                        reason
+                    );
                     return Err(anyhow::Error::new(vision::SendOutcomeUncertain).context(reason));
                 }
             }
