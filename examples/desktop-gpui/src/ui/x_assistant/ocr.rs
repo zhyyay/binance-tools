@@ -1385,6 +1385,68 @@ pub(super) fn locate_reply_input(
     Ok(None)
 }
 
+/// 在已检测到的 X 回复弹窗左上角识别关闭图标（“×”），返回弹窗截图坐标。
+/// 只搜索动态弹窗边界内左上角的小区域，并要求两条对角线都形成连续暗色笔画。
+pub(super) fn locate_reply_close_button(path: &Path) -> anyhow::Result<Option<(i32, i32)>> {
+    let crop = crop_compose_dialog(path)?;
+    let (width, height) = crop.image.dimensions();
+    let max_x = width.min(64);
+    let max_y = height.min(64);
+    if max_x < 28 || max_y < 28 {
+        return Ok(None);
+    }
+
+    let mut best: Option<(u32, u32, usize)> = None;
+    for center_y in 14..max_y.saturating_sub(7) {
+        for center_x in 14..max_x.saturating_sub(7) {
+            let mut descending = 0usize;
+            let mut ascending = 0usize;
+            for offset in -6_i32..=6 {
+                let x = (center_x as i32 + offset) as u32;
+                let y_down = (center_y as i32 + offset) as u32;
+                let y_up = (center_y as i32 - offset) as u32;
+                let is_dark = |px: u32, py: u32| {
+                    (-1_i32..=1).any(|dx| (-1_i32..=1).any(|dy| {
+                        let sx = px as i32 + dx;
+                        let sy = py as i32 + dy;
+                        sx >= 0 && sy >= 0
+                            && (sx as u32) < width && (sy as u32) < height
+                            && pixel_luminance(crop.image.get_pixel(sx as u32, sy as u32).0) < 150
+                    }))
+                };
+                descending += usize::from(is_dark(x, y_down));
+                ascending += usize::from(is_dark(x, y_up));
+            }
+            if descending >= 8 && ascending >= 8 {
+                let score = descending + ascending;
+                if best.is_none_or(|(_, _, best_score)| score > best_score) {
+                    best = Some((center_x, center_y, score));
+                }
+            }
+        }
+    }
+
+    let Some((x, y, score)) = best else {
+        super::automation::log_event(
+            "回复质量过滤失败：已检测到回复弹窗，但未能确认左上角关闭图标；不会猜测坐标。",
+        );
+        return Ok(None);
+    };
+    super::automation::log_event(&format!(
+        "回复弹窗关闭图标识别成功：弹窗局部坐标=({x},{y})，双对角线匹配分数={score}。"
+    ));
+    Ok(Some((x as i32 + crop.left as i32, y as i32 + crop.top as i32)))
+}
+
+/// 用弹窗边界检测确认回复窗口是否仍然存在。
+pub(super) fn reply_composer_is_open(path: &Path) -> anyhow::Result<bool> {
+    match crop_compose_dialog(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.to_string().contains("未检测到可信的明亮 compose 弹窗") => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 pub(super) fn locate_reply_submit_button(
     path: &Path,
     reply_text: &str,
