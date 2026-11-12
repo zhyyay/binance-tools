@@ -1063,17 +1063,17 @@ impl XAssistantPage {
     // 将每个按钮拆分到独立函数，避免在 GPUI render 回调中创建一个过大的临时栈帧。
     fn render_status_tab_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_run_status;
-        // 暂时绕过封装 Button：当前崩溃发生在将 Button 加入父容器时。
-        // 使用 GPUI 原生 div 点击事件保留页签功能，便于确认是否为 Button 组件触发。
-        let button = div()
-            .id("x-assistant-status-tab")
+        v_flex()
             .w(px(112.))
-            .px_2()
-            .py_1()
-            .text_size(px(12.))
-            .text_color(palette::text(cx.theme()))
-            .child("全部日志")
-            .on_click(cx.listener(|this, _, _, cx| {
+            .gap_1()
+            .child(
+                Button::new("x-assistant-status-tab")
+                    .ghost()
+                    .small()
+                    .label("运行状态")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                // 每次打开运行状态页都重新读取当天（北京时间）的日志，
+                // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
                 this.log_tail = Some(run_log::LogTail::new());
                 this.show_run_status = true;
                 this.show_reply_list = false;
@@ -1081,66 +1081,54 @@ impl XAssistantPage {
                 this.show_task_settings = false;
                 this.show_auto_post = false;
                 cx.notify();
-            }));
-
-        let indicator = div()
-            .w_full()
-            .h(px(2.))
-            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
-
-        v_flex()
-            .w(px(112.))
-            .gap_1()
-            .child(button)
-            .child(indicator)
+            })),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(2.))
+                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
+            )
             .into_any_element()
     }
     fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        let selected = !self.show_run_status
-            && !self.show_reply_list
-            && !self.show_post_history
-            && !self.show_task_settings
-            && !self.show_auto_post;
-        let button = div()
-            .id("x-assistant-reply-flow-tab")
-            .w(px(112.))
-            .px_2()
-            .py_1()
-            .text_size(px(12.))
-            .text_color(palette::text(cx.theme()))
-            .child("自动回复")
-            .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx)));
-        let indicator = div()
-            .w_full()
-            .h(px(2.))
-            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
+        let selected = !self.show_run_status && !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post;
         v_flex()
             .w(px(112.))
             .gap_1()
-            .child(button)
-            .child(indicator)
+            .child(
+                Button::new("x-assistant-reply-flow-tab")
+                    .ghost()
+                    .small()
+                    .label("自动回复")
+                    .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(2.))
+                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
+            )
             .into_any_element()
     }
     fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_auto_post;
-        let button = div()
-            .id("x-assistant-auto-post-tab")
-            .w(px(112.))
-            .px_2()
-            .py_1()
-            .text_size(px(12.))
-            .text_color(palette::text(cx.theme()))
-            .child("自动发帖")
-            .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx)));
-        let indicator = div()
-            .w_full()
-            .h(px(2.))
-            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
         v_flex()
             .w(px(112.))
             .gap_1()
-            .child(button)
-            .child(indicator)
+            .child(
+                Button::new("x-assistant-auto-post-tab")
+                    .ghost()
+                    .small()
+                    .label("自动发帖")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(2.))
+                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
+            )
             .into_any_element()
     }
     fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
