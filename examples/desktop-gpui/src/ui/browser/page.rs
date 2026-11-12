@@ -1142,7 +1142,6 @@ impl BrowserAssistantPage {
                                 ),
                         )
                     })
-                    }),
             )
             .into_any_element()
     }
