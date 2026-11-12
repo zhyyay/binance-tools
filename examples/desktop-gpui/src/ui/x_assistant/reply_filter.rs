@@ -40,7 +40,7 @@ pub(crate) fn generate_compliant_reply(
             Duration::from_secs(120),
             cancel,
         )?;
-        automation::log_event(&format!(
+        automation::log_screenshot_event(&format!(
             "回复生成请求 {attempt}/{MAX_ATTEMPTS} 完成，耗时 {} ms。",
             started.elapsed().as_millis()
         ));
@@ -48,7 +48,7 @@ pub(crate) fn generate_compliant_reply(
         match sanitize_reply(&generated, &options.reply_rules, source_post) {
             Ok(reply) => return Ok(reply),
             Err(error) => {
-                automation::log_event(&format!(
+                automation::log_screenshot_event(&format!(
                     "回复生成请求 {attempt}/{MAX_ATTEMPTS} 未通过质量过滤：{error:#}"
                 ));
                 let limit = reply_char_limit(&options.reply_rules).unwrap_or(280);
