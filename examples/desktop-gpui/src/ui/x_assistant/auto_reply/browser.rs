@@ -66,7 +66,7 @@ impl BrowserReplyRunner {
         if should_refresh {
             automation::log_browser_event("自动回复：运行已满 5 分钟，刷新独立 X 自动化页面（等同 F5）。");
             let reload_result = client.execute(BrowserCommand::ReloadPage);
-            let reload_ok = matches!(reload_result, Ok(ref response) if response.ok);
+            let reload_ok = matches!(&reload_result, Ok(response) if response.ok);
             if !reload_ok {
                 let reason = match reload_result {
                     Ok(response) => response.error.unwrap_or_else(|| "刷新命令未成功".into()),
@@ -307,12 +307,18 @@ impl BrowserReplyRunner {
                         "浏览器插件：推文 ID={} 回复已发送并收到成功确认；本批已成功回复 {}/3 条。",
                         post_id, self.batch_replies
                     ));
-                    if self.batch_replies >= 3 {
+                    let batch_complete = self.batch_replies >= 3;
+                    if batch_complete {
                         self.seen_post_ids.extend(batch_post_ids.iter().cloned());
                         self.batch_replies = 0;
                         automation::log_browser_event(&format!(
                             "本批 10 条推文已达到最多 3 条回复限制；剩余帖子全部跳过，准备滚动并重新解析新一批。批次 ID 数量={}。",
                             batch_post_ids.len()
+                        ));
+                    } else {
+                        automation::log_browser_event(&format!(
+                            "本批尚未达到回复上限，保留当前时间线位置；下一轮继续处理本批，当前成功回复 {}/3 条。",
+                            self.batch_replies
                         ));
                     }
                     return Ok(VisionReplyResult {
@@ -324,7 +330,11 @@ impl BrowserReplyRunner {
                         reply_text,
                         completed: true,
                         skipped_duplicate: false,
-                        summary: format!("浏览器插件回复成功，推文 ID={post_id}。"),
+                        summary: if batch_complete {
+                            format!("浏览器插件回复成功，推文 ID={post_id}；本批已完成，准备滚动。")
+                        } else {
+                            format!("浏览器插件回复成功，推文 ID={post_id}；继续处理当前批次。")
+                        },
                     });
                 }
                 Some("confirmation_unknown") => {
