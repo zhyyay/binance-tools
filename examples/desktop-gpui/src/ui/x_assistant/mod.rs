@@ -1086,8 +1086,14 @@ impl XAssistantPage {
 
         app_log::info!("X 菜单诊断：运行状态按钮 F，创建外层容器");
         let container = v_flex().w(px(112.)).gap_1();
-        app_log::info!("X 菜单诊断：运行状态按钮 G，将 Button 放入容器");
-        let container = container.child(button);
+        app_log::info!("X 菜单诊断：运行状态按钮 G，准备使用普通 div 替代 Button 做隔离测试");
+        let container = container.child(
+            div()
+                .px_2()
+                .py_1()
+                .child("运行状态（临时诊断）"),
+        );
+        app_log::info!("X 菜单诊断：普通 div 已放入容器");
 
         app_log::info!("X 菜单诊断：运行状态按钮 H1，创建选中指示条");
         let indicator = div().w_full().h(px(2.));
