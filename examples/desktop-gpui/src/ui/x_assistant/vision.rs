@@ -2,7 +2,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     cell::RefCell,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -182,11 +182,8 @@ struct VisionDecision {
     #[serde(default)]
     composer_open: bool,
     #[serde(default)]
-    text_matches: bool,
     #[serde(default)]
-    reply_field_matches: bool,
     #[serde(default)]
-    poll_mode: bool,
     #[serde(default)]
     completed: bool,
     // 视觉模型必须区分原帖下方已发布回复与编辑框中的草稿。
@@ -257,337 +254,6 @@ struct Shot {
     width: u32,
     height: u32,
     stage: String,
-}
-
-pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
-    scroll_down_in_small_steps(cancel, reason)
-}
-
-fn refresh_timeline(cancel: &AtomicBool) -> anyhow::Result<()> {
-    check_cancel(cancel)?;
-    automation::native::activate_browser()?;
-    automation::native::press_f5()?;
-    wait_cancel(cancel, Duration::from_secs(3))?;
-
-    let dir = current_screenshot_dir();
-    fs::create_dir_all(&dir)?;
-    let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
-    let mut screenshots = Vec::new();
-    let check_shot = capture_desktop(&dir, &id, "feed-refresh-check", &mut screenshots)?;
-    check_cancel(cancel)?;
-    anyhow::ensure!(
-        check_shot.width >= 800 && check_shot.height >= 600,
-        "刷新确认检查截图尺寸异常（{}x{}），停止本轮以免漏处理确认弹窗",
-        check_shot.width,
-        check_shot.height
-    );
-
-    match ocr::recognize_reload_confirmation(&check_shot.png) {
-        Ok(true) => {
-            automation::log_screenshot_event("时间线刷新：识别到重新加载确认提示，按 Enter 确认。");
-            automation::native::press_enter()?;
-            wait_cancel(cancel, Duration::from_secs(5))?;
-        }
-        Ok(false) => {
-            automation::log_screenshot_event("时间线刷新：未发现重新加载确认提示。");
-            wait_cancel(cancel, Duration::from_secs(2))?;
-        }
-        Err(error) => anyhow::bail!("无法识别刷新确认提示，停止本轮：{error:#}"),
-    }
-
-    check_cancel(cancel)
-}
-
-pub(super) fn recover_by_error(
-    cancel: &AtomicBool,
-    error: &anyhow::Error,
-) -> anyhow::Result<()> {
-    let message = format!("{error:#}");
-
-    if message.contains("账号二次 OCR") || message.contains("账号不一致") {
-        automation::log_screenshot_event(
-            "分类恢复：账号二次核验存在歧义，跳过当前帖子并滚动；不执行全桌面 OCR。",
-        );
-        return scroll_down_in_small_steps(cancel, "账号识别存在歧义，安全跳过当前帖子");
-    }
-
-    if message.contains("截图尺寸异常")
-        || message.contains("浏览器客户区尺寸异常")
-        || message.contains("截图尺寸与浏览器客户区不一致")
-    {
-        automation::log_screenshot_event(
-            "分类恢复：浏览器窗口尺寸异常，重新激活并检查客户区；不对异常截图执行 OCR。",
-        );
-        native::activate_browser()?;
-        wait_cancel(cancel, Duration::from_millis(700))?;
-        let (width, height) = native::get_window_client_size()?;
-        anyhow::ensure!(
-            width >= 800 && height >= 600,
-            "浏览器恢复后客户区仍异常（{}x{}），停止自动操作",
-            width,
-            height
-        );
-        automation::log_screenshot_event(&format!(
-            "分类恢复：浏览器客户区已恢复为 {}x{}，下一轮重新截图。",
-            width, height
-        ));
-        return Ok(());
-    }
-
-    if message.contains("局部 OCR")
-        || message.contains("互动栏")
-        || message.contains("回复坐标")
-        || message.contains("PP-OCR")
-    {
-        automation::log_screenshot_event(
-            "分类恢复：帖子或互动栏 OCR 失败，跳过当前帖子并滚动；不执行昂贵的全桌面状态 OCR。",
-        );
-        return scroll_down_in_small_steps(cancel, "帖子或互动栏 OCR 失败，安全跳过当前帖子");
-    }
-
-    randomized_recovery(cancel, "本轮报错，按通用流程恢复")
-}
-
-pub(super) fn randomized_recovery(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
-    check_cancel(cancel)?;
-    if reason.contains("报错") {
-        automation::native::activate_browser()?;
-        let dir = current_screenshot_dir();
-        fs::create_dir_all(&dir)?;
-        let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
-        let mut screenshots = Vec::new();
-        let check_shot =
-            capture_desktop(&dir, &id, "full-auto-error-state-check", &mut screenshots)?;
-        let mut current_url = ocr::recognize_current_url(&check_shot.png)?;
-        if current_url
-            .as_deref()
-            .is_some_and(ocr::is_x_compose_post_address)
-        {
-            automation::log_screenshot_event(
-                "全自动恢复：发现回复弹窗仍打开；不重新发送，尝试按 Escape 关闭并核验页面。",
-            );
-            native::press_escape()?;
-            wait_cancel(cancel, Duration::from_millis(900))?;
-            let after_escape = capture_desktop(
-                &dir,
-                &id,
-                "full-auto-error-state-after-escape",
-                &mut screenshots,
-            )?;
-            if let Some((discard_x, discard_y)) =
-                ocr::locate_discard_draft_button(&after_escape.png)?
-            {
-                automation::log_screenshot_event("全自动恢复：发现草稿确认框，点击‘放弃’以关闭未发送回复。");
-                native::click_at_client_position(discard_x, discard_y)?;
-                wait_cancel(cancel, Duration::from_millis(700))?;
-                let after_discard = capture_desktop(
-                    &dir,
-                    &id,
-                    "full-auto-error-state-after-discard",
-                    &mut screenshots,
-                )?;
-                current_url = ocr::recognize_current_url(&after_discard.png)?;
-            } else if ocr::recognize_save_draft_confirmation(&after_escape.png)? {
-                automation::log_screenshot_event(
-                    "全自动恢复：发现草稿确认框（未精准定位放弃按钮），点击备用位置关闭。",
-                );
-                let fallback_x = after_escape.width as i32 * 50 / 100;
-                let fallback_y = after_escape.height as i32 * 60 / 100;
-                native::click_at_client_position(fallback_x, fallback_y)?;
-                wait_cancel(cancel, Duration::from_millis(700))?;
-                let after_discard = capture_desktop(
-                    &dir,
-                    &id,
-                    "full-auto-error-state-after-discard",
-                    &mut screenshots,
-                )?;
-                current_url = ocr::recognize_current_url(&after_discard.png)?;
-            } else {
-                current_url = ocr::recognize_current_url(&after_escape.png)?;
-            }
-        }
-        if !current_url.as_deref().is_some_and(ocr::is_x_home_address) {
-            automation::log_screenshot_event(&format!(
-                "全自动恢复：当前地址未能确认回到 x.com/home（当前：{current_url:?}）；\
-                 按 Escape 后重新截图检查，不再盲目点击屏幕中心。"
-            ));
-
-            let _ = native::press_escape();
-            std::thread::sleep(Duration::from_millis(800));
-
-            let after_escape = capture_desktop(
-                &dir,
-                &id,
-                "full-auto-error-state-safe-check",
-                &mut screenshots,
-            )?;
-
-            current_url = ocr::recognize_current_url(&after_escape.png)?;
-
-            if current_url.as_deref().is_some_and(ocr::is_x_home_address) {
-                automation::log_screenshot_event("全自动恢复：按 Escape 后已确认回到 x.com/home。");
-            } else if let Some((discard_x, discard_y)) =
-                ocr::locate_discard_draft_button(&after_escape.png)?
-            {
-                automation::log_screenshot_event("全自动恢复：识别到草稿放弃按钮，点击识别到的按钮坐标。");
-
-                native::click_at_client_position(discard_x, discard_y)?;
-                std::thread::sleep(Duration::from_millis(700));
-
-                let after_discard = capture_desktop(
-                    &dir,
-                    &id,
-                    "full-auto-error-state-safe-after-discard",
-                    &mut screenshots,
-                )?;
-
-                current_url = ocr::recognize_current_url(&after_discard.png)?;
-
-                if current_url.as_deref().is_some_and(ocr::is_x_home_address) {
-                    automation::log_screenshot_event("全自动恢复：点击放弃后已确认回到 x.com/home。");
-                } else {
-                    automation::log_screenshot_event(&format!(
-                        "全自动恢复：点击放弃后仍未确认首页，当前地址：{current_url:?}；\
-                         不再执行盲目点击。"
-                    ));
-                }
-            } else {
-                automation::log_screenshot_event(&format!(
-                    "全自动恢复：未识别到可靠的放弃按钮，当前地址：{current_url:?}；\
-                     为避免误点，不执行屏幕中心点击。"
-                ));
-            }
-        }
-    }
-    let seed = next_random_u64();
-    // 普通报错优先小步滚动，不随机刷新页面。
-    // 只有非报错场景才保留原来的随机刷新策略。
-    if !reason.contains("报错") && seed % 2 == 0 {
-        automation::native::activate_browser()?;
-        automation::log_screenshot_event(&format!("全自动恢复：{reason}；随机选择 F5 刷新页面。"));
-        automation::native::press_f5()?;
-        wait_cancel(cancel, Duration::from_secs(3))?;
-        let dir = current_screenshot_dir();
-        fs::create_dir_all(&dir)?;
-        let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
-        let mut screenshots = Vec::new();
-        let check_shot = capture_desktop(&dir, &id, "full-auto-refresh-check", &mut screenshots)?;
-        check_cancel(cancel)?;
-        anyhow::ensure!(
-            check_shot.width >= 800 && check_shot.height >= 600,
-            "刷新确认检查截图尺寸异常（{}x{}），停止本轮以免漏处理确认弹窗",
-            check_shot.width,
-            check_shot.height
-        );
-        match ocr::recognize_reload_confirmation(&check_shot.png) {
-            Ok(true) => {
-                automation::log_screenshot_event(
-                    "全自动恢复：识别到浏览器重新加载确认提示，按 Enter 确认刷新。",
-                );
-                automation::native::press_enter()?;
-                wait_cancel(cancel, Duration::from_secs(5))?;
-            }
-            Ok(false) => {
-                automation::log_screenshot_event("全自动恢复：全桌面截图未发现重新加载确认提示。");
-            }
-            Err(error) => {
-                anyhow::bail!(
-                    "无法识别全桌面刷新检查截图，停止本轮以免跳过可能存在的确认弹窗：{error:#}"
-                );
-            }
-        }
-        automation::log_screenshot_event("全自动恢复：F5 刷新检查完成。");
-        check_cancel(cancel)
-    } else {
-        scroll_down_in_small_steps(cancel, reason)
-    }
-}
-
-fn scroll_down_in_small_steps(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
-    // 每轮随机滚动 5～12 格，每段随机滚动 2～5 格。
-    scroll_down_random_steps(cancel, reason, 5, 12)?;
-
-    let count = FEED_SCROLL_COUNT.fetch_add(1, Ordering::AcqRel) + 1;
-    automation::log_screenshot_event(&format!(
-        "时间线滚动计数：{count}/{SCROLLS_BEFORE_REFRESH}"
-    ));
-
-    if count >= SCROLLS_BEFORE_REFRESH {
-        check_cancel(cancel)?;
-        automation::log_screenshot_event("时间线连续滚动达到阈值，刷新页面以获取较新的帖子。");
-        refresh_timeline(cancel)?;
-        FEED_SCROLL_COUNT.store(0, Ordering::Release);
-        automation::log_screenshot_event("时间线刷新完成，滚动计数已归零。");
-    }
-
-    Ok(())
-}
-
-pub(super) fn scroll_down_to_complete_post(
-    cancel: &AtomicBool,
-    reason: &str,
-) -> anyhow::Result<()> {
-    // 补齐帖子时同样随机滚动 5～12 格，每段 2～5 格。
-    scroll_down_random_steps(cancel, reason, 5, 12)
-}
-
-fn activate_browser_for_scroll(reason: &str) -> anyhow::Result<()> {
-    let started = Instant::now();
-    automation::log_screenshot_event(&format!("滚动前：开始激活浏览器，原因={reason}。"));
-
-    match automation::native::activate_browser() {
-        Ok(()) => {
-            automation::log_screenshot_event(&format!(
-                "滚动前：浏览器激活成功，耗时 {:.2} 秒。",
-                started.elapsed().as_secs_f64()
-            ));
-            Ok(())
-        }
-        Err(error) => {
-            automation::log_screenshot_event(&format!(
-                "滚动前：浏览器激活失败，耗时 {:.2} 秒：{error:#}",
-                started.elapsed().as_secs_f64()
-            ));
-            Err(error.context("滚动前激活浏览器失败"))
-        }
-    }
-}
-
-fn scroll_down_random_steps(
-    cancel: &AtomicBool,
-    reason: &str,
-    min_steps: u32,
-    max_steps: u32,
-) -> anyhow::Result<()> {
-    check_cancel(cancel)?;
-    activate_browser_for_scroll(reason)?;
-    let range = max_steps.saturating_sub(min_steps).saturating_add(1);
-    let total = min_steps + (next_random_u64() % u64::from(range)) as u32;
-    automation::log_screenshot_event(&format!(
-        "全自动准备：{reason}；本轮随机滚动 {total} 格，分段执行。"
-    ));
-
-    let mut moved = 0;
-    while moved < total {
-        check_cancel(cancel)?;
-        let remaining = total - moved;
-        let batch = (2 + (next_random_u64() % 4) as u32).min(remaining);
-        automation::native::scroll_down_by_notches(batch as i32)?;
-        moved += batch;
-
-        // 每段等待时间不同，偶尔停顿更久；取消时最多约 100ms 响应。
-        let delay_ms = 160 + (next_random_u64() % 541);
-        wait_cancel(cancel, Duration::from_millis(delay_ms))?;
-        if moved < total && next_random_u64() % 4 == 0 {
-            let pause_ms = 350 + (next_random_u64() % 651);
-            wait_cancel(cancel, Duration::from_millis(pause_ms))?;
-        }
-    }
-
-    automation::log_screenshot_event(&format!(
-        "全自动准备：随机滚动完成，共 {total} 格，页面稳定后识别。"
-    ));
-    check_cancel(cancel)
 }
 
 pub fn run_visual_reply(
@@ -2291,9 +1957,6 @@ fn identify_post_for_mode(
         post_bottom_y: Some(local.post_bottom_y),
         refresh_posts: false,
         composer_open: false,
-        text_matches: false,
-        reply_field_matches: false,
-        poll_mode: false,
         completed: false,
         reply_post_state: None,
     })
@@ -2483,9 +2146,6 @@ fn decision_from_local_post(post: ocr::LocalPostIdentification) -> VisionDecisio
         post_bottom_y: Some(post.post_bottom_y),
         refresh_posts: false,
         composer_open: false,
-        text_matches: false,
-        reply_field_matches: false,
-        poll_mode: false,
         completed: false,
         reply_post_state: None,
     }
