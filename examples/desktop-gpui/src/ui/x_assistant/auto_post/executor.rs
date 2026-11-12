@@ -250,12 +250,11 @@ fn submit_prepared_post_via_browser_assistant(
         "打开独立 X 自动化窗口失败：{}",
         window.error.unwrap_or_default()
     );
+    let window_info = window.result.unwrap_or(Value::Null);
     app_log::post_info!(
         "[浏览器助手发帖] 独立 X 自动化窗口已就绪：{}",
-        window.result.unwrap_or(Value::Null)
+        window_info
     );
-
-    let window_info = window.result.unwrap_or(Value::Null);
     let url = window_info.get("url").and_then(Value::as_str).unwrap_or_default();
     app_log::post_info!(
         "[浏览器助手发帖] 使用独立自动化窗口：{}",
