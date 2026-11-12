@@ -1,6 +1,6 @@
 mod automation;
 mod auto_comment;
-mod auto_post;
+pub(crate) mod auto_post;
 mod auto_reply;
 mod core;
 mod crop;
