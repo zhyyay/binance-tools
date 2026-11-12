@@ -19,7 +19,7 @@ impl std::fmt::Display for ReplyQualityRejected {
 impl std::error::Error for ReplyQualityRejected {}
 
 /// 生成并校验回复；首次生成不合格时重试一次，仍不合格就放弃该帖子。
-pub(super) fn generate_compliant_reply(
+pub(crate) fn generate_compliant_reply(
     options: &VisionReplyOptions,
     initial_prompt: &str,
     source_post: &str,
