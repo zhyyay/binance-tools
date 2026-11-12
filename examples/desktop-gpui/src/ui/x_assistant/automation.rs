@@ -57,9 +57,9 @@ pub(super) mod native {
         },
         UI::{
             Input::KeyboardAndMouse::{
-                INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
-                KEYEVENTF_UNICODE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_WHEEL,
-                MOUSEINPUT, SendInput, VIRTUAL_KEY,
+                INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+                KEYEVENTF_UNICODE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
+                SendInput, VIRTUAL_KEY,
             },
             WindowsAndMessaging::{
                 EnumWindows, FindWindowW, GetClassNameW, GetClientRect, GetCursorPos,
@@ -536,35 +536,6 @@ pub(super) mod native {
         Ok(())
     }
 
-    pub fn scroll_down_by_notches(notches: i32) -> anyhow::Result<()> {
-        anyhow::ensure!((1..=12).contains(&notches), "滚动格数必须在 1..=12");
-        let hwnd = unsafe { GetForegroundWindow() };
-        anyhow::ensure!(!hwnd.is_invalid(), "无法找到前台浏览器窗口");
-        let mut class_name = [0u16; 128];
-        let count = unsafe { GetClassNameW(hwnd, &mut class_name) }.max(0) as usize;
-        let class_name = String::from_utf16_lossy(&class_name[..count]);
-        anyhow::ensure!(
-            class_name == "Chrome_WidgetWin_1" || class_name == "MozillaWindowClass",
-            "浏览器不在前台，已停止滚动"
-        );
-        let input = INPUT {
-            r#type: INPUT_MOUSE,
-            Anonymous: INPUT_0 {
-                mi: MOUSEINPUT {
-                    dx: 0,
-                    dy: 0,
-                    mouseData: (-(120i32 * notches)) as u32,
-                    dwFlags: MOUSEEVENTF_WHEEL,
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        };
-        let sent = unsafe { SendInput(&[input], size_of::<INPUT>() as i32) };
-        anyhow::ensure!(sent == 1, "发送滚轮事件失败");
-        Ok(())
-    }
-
     /// 只移动鼠标，不产生点击；用于提交后将指针从按钮上移开。
     pub fn move_cursor_to_client_position(client_x: i32, client_y: i32) -> anyhow::Result<()> {
         let hwnd = unsafe { GetForegroundWindow() };
@@ -786,9 +757,6 @@ pub(super) mod native {
         bail!("X 辅助桌面控制仅支持 Windows")
     }
     pub fn press_f5() -> anyhow::Result<()> {
-        bail!("X 辅助桌面控制仅支持 Windows")
-    }
-    pub fn scroll_down_by_notches(_: i32) -> anyhow::Result<()> {
         bail!("X 辅助桌面控制仅支持 Windows")
     }
     pub fn press_enter() -> anyhow::Result<()> {
