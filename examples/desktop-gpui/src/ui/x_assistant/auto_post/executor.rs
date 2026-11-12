@@ -255,15 +255,12 @@ fn submit_prepared_post_via_browser_assistant(
         window.result.unwrap_or(Value::Null)
     );
 
-    let page = client.execute(BrowserCommand::GetPageInfo)
-        .context("读取浏览器助手当前标签页失败")?;
-    ensure!(
-        page.ok,
-        "读取浏览器助手当前标签页失败：{}",
-        page.error.unwrap_or_default()
+    let window_info = window.result.unwrap_or(Value::Null);
+    let url = window_info.get("url").and_then(Value::as_str).unwrap_or_default();
+    app_log::post_info!(
+        "[浏览器助手发帖] 使用独立自动化窗口：{}",
+        window_info
     );
-    let page = page.result.unwrap_or(Value::Null);
-    let url = page.get("url").and_then(Value::as_str).unwrap_or_default();
     ensure!(
         url.starts_with("https://x.com/") || url == "https://x.com",
         "浏览器当前活动标签页不是 X 页面（{}）；请先在浏览器助手中打开已登录的 X 页面",
