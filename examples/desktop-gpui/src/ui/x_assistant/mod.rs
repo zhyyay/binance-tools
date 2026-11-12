@@ -1,4 +1,4 @@
-mod automation;
+pub(crate) mod automation;
 mod auto_comment;
 pub(crate) mod auto_post;
 mod auto_reply;
