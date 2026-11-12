@@ -327,6 +327,15 @@ fn log_round_error(
     }
 }
 
+/// 判断是否为 AI 回复质量过滤拒绝。
+///
+/// 该错误只针对当前帖子；即使专用错误类型在跨层传播时被 anyhow context 包装，
+/// 也通过稳定错误标记兜底识别，避免被当成自动化故障而停止整个任务。
+fn is_reply_quality_rejection(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<super::super::reply_filter::ReplyQualityRejected>().is_some()
+        || format!("{error:#}").contains("回复连续两次未通过质量过滤")
+}
+
 /// 将错误或摘要压成单行，避免换行破坏日志检索。
 fn compact_log_value(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
