@@ -39,7 +39,8 @@ impl AutoReplyRunner {
         mut post_scheduler: Option<(SyncSender<()>, Receiver<bool>)>,
     ) -> Result<VisionReplyResult> {
         automation::log_browser_event("自动回复循环启动");
-        let mut first_reply_completed = false;
+        // 发帖调度从任务启动即生效，不要求先成功回复一条；
+        // 否则时间线持续出现重复账号/无可回复帖子时，自动发帖会一直得不到执行机会。
         let mut rounds_since_post = 0usize;
         let mut post_scheduler_active = post_scheduler.is_some();
 
@@ -60,25 +61,7 @@ impl AutoReplyRunner {
                 return self.stop();
             }
 
-            let completed_before = self.completed;
             let result = self.run_once(&options, cancel);
-
-            // 正常发送模式要求至少有一条真正发送成功后才联动发帖；
-            // 自动发送关闭时，回复流程仍然运行，但不会产生“发送成功”，
-            // 此时以首轮成功处理作为联动自动发帖的启动条件。
-            let reply_turn_completed = result.is_ok()
-                && (self.completed > completed_before || !options.auto_send);
-            if reply_turn_completed && !first_reply_completed {
-                if options.auto_send {
-                    ensure_daily_reply_capacity()?;
-                }
-                first_reply_completed = true;
-                automation::log_browser_event(if options.auto_send {
-                    "自动回复首条成功，已启用 10:1 自动发帖调度"
-                } else {
-                    "自动回复处于仅生成/输入模式，首轮完成后已启用 10:1 自动发帖调度"
-                });
-            }
 
             // 用户取消优先于当前轮次产生的错误。
             if Self::is_cancelled(cancel) {
@@ -91,7 +74,7 @@ impl AutoReplyRunner {
             // 轮次包括成功、跳过重复内容以及已恢复的普通失败；每轮浏览器操作已完整结束。
             if post_scheduler_active {
                 rounds_since_post += 1;
-                if first_reply_completed && rounds_since_post >= REPLY_ROUNDS_PER_POST {
+                if rounds_since_post >= REPLY_ROUNDS_PER_POST {
                     automation::log_browser_event(&format!(
                         "自动回复已完成 {REPLY_ROUNDS_PER_POST} 轮，交出浏览器操作权，等待自动发帖完成 1 次调度。"
                     ));
@@ -417,7 +400,7 @@ pub fn run(options: VisionReplyOptions, cancel: &AtomicBool) -> Result<VisionRep
     AutoReplyRunner::default().run(options, cancel, None)
 }
 
-/// 自动化联动入口：每完成 10 轮回复，交出一次浏览器操作权给自动发帖。
+/// 自动化联动入口：从启动后累计每 10 轮回复，交出一次浏览器操作权给自动发帖。
 pub fn run_with_post_scheduler(
     options: VisionReplyOptions,
     cancel: &AtomicBool,
