@@ -8,6 +8,7 @@ use gpui_component::{
     h_flex,
     input::{Input, InputState},
     scroll::ScrollableElement,
+    table::{Column, Table as DataTable, TableDelegate, TableState},
     v_flex,
 };
 use std::{
@@ -47,6 +48,98 @@ enum StepKind {
     ScrollUp,
 }
 
+#[derive(Clone)]
+struct BrowserReplyTableDelegate {
+    columns: Vec<Column>,
+    records: Vec<binance_tools::db::x_assistant::XAssistantReplyRecord>,
+}
+
+impl Default for BrowserReplyTableDelegate {
+    fn default() -> Self {
+        Self {
+            columns: vec![
+                Column::new("created_at", "回复时间（北京时间）").width(px(150.)),
+                Column::new("author", "发帖人 / 账号").width(px(170.)),
+                Column::new("post", "原帖内容").width(px(280.)),
+                Column::new("reply", "回复内容").width(px(220.)),
+                Column::new("status", "发送状态").width(px(110.)),
+            ],
+            records: Vec::new(),
+        }
+    }
+}
+
+impl BrowserReplyTableDelegate {
+    fn set_records(&mut self, records: Vec<binance_tools::db::x_assistant::XAssistantReplyRecord>) {
+        self.records = records;
+    }
+}
+
+impl TableDelegate for BrowserReplyTableDelegate {
+    fn columns_count(&self, _: &App) -> usize {
+        self.columns.len()
+    }
+
+    fn rows_count(&self, _: &App) -> usize {
+        self.records.len()
+    }
+
+    fn column(&self, col_ix: usize, _: &App) -> &Column {
+        &self.columns[col_ix]
+    }
+
+    fn render_td(
+        &mut self,
+        row_ix: usize,
+        col_ix: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let Some(record) = self.records.get(row_ix) else {
+            return div().size_full().into_any_element();
+        };
+        let key = self.columns[col_ix].key.as_ref();
+        let value = match key {
+            "created_at" => app_log::format_beijing_timestamp(&record.created_at),
+            "author" => {
+                if record.author_name.trim().is_empty() {
+                    record.account_handle.clone()
+                } else {
+                    format!("{} · {}", record.author_name, record.account_handle)
+                }
+            }
+            "post" => record.post_text.clone(),
+            "reply" => record.reply_text.clone(),
+            "status" => match record.send_status.as_str() {
+                "sent" => "已发送",
+                "pending" => "待提交",
+                "submitting" => "提交中 / 待核验",
+                "duplicate" => "重复回复",
+                "failed" => "发送失败",
+                "uncertain" => "待人工核验",
+                _ => "未知",
+            }.to_string(),
+            _ => String::new(),
+        };
+        let color = match record.send_status.as_str() {
+            "sent" | "duplicate" => theme.success,
+            "failed" => palette::error_text(),
+            _ => palette::text(theme),
+        };
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .px_2()
+            .text_size(px(11.))
+            .text_color(if key == "status" { color } else { palette::text(theme) })
+            .truncate()
+            .child(value)
+            .into_any_element()
+    }
+}
+
 pub struct BrowserAssistantPage {
     tab: BrowserTab,
     selector: Entity<InputState>,
@@ -67,6 +160,7 @@ pub struct BrowserAssistantPage {
     x_reply_rules: Entity<InputState>,
     browser_posts: Vec<binance_tools::db::x_posting::XPublishedPost>,
     browser_replies: Vec<binance_tools::db::x_assistant::XAssistantReplyRecord>,
+    browser_reply_table: Entity<TableState<BrowserReplyTableDelegate>>,
     history_error: Option<String>,
 }
 
@@ -88,6 +182,11 @@ impl BrowserAssistantPage {
         });
         let x_settings = binance_tools::db::browser_assistant::load_task_settings_blocking()
             .unwrap_or_default();
+        let browser_reply_table = cx.new(|cx| {
+            TableState::new(BrowserReplyTableDelegate::default(), window, cx)
+                .col_movable(false)
+                .row_selectable(true)
+        });
         Self {
             tab: BrowserTab::Status,
             selector,
@@ -108,6 +207,7 @@ impl BrowserAssistantPage {
             x_reply_rules,
             browser_posts: Vec::new(),
             browser_replies: Vec::new(),
+            browser_reply_table,
             history_error: None,
         }
     }
@@ -218,10 +318,16 @@ impl BrowserAssistantPage {
         }
     }
 
-    fn reload_browser_reply_history(&mut self) {
+    fn reload_browser_reply_history(&mut self, cx: &mut Context<Self>) {
         self.history_error = None;
         match binance_tools::db::x_assistant::list_reply_records_by_method_blocking("browser") {
-            Ok(records) => self.browser_replies = records,
+            Ok(records) => {
+                self.browser_replies = records.clone();
+                self.browser_reply_table.update(cx, |table, cx| {
+                    table.delegate_mut().set_records(records);
+                    table.refresh(cx);
+                });
+            }
             Err(error) => self.history_error = Some(format!("读取浏览器助手回复历史失败：{error:#}")),
         }
     }
@@ -466,7 +572,7 @@ impl BrowserAssistantPage {
                 this.tab = tab;
                 match tab {
                     BrowserTab::PostHistory => this.reload_browser_post_history(),
-                    BrowserTab::ReplyHistory => this.reload_browser_reply_history(),
+                    BrowserTab::ReplyHistory => this.reload_browser_reply_history(cx),
                     _ => {}
                 }
                 cx.notify();
@@ -686,59 +792,233 @@ impl BrowserAssistantPage {
 
     fn render_reply_history(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let rows = if self.browser_replies.is_empty() {
-            v_flex().p_3().child(
-                div().text_size(px(12.)).text_color(palette::muted(theme))
-                    .child("暂无浏览器助手回复记录。"),
-            ).into_any_element()
-        } else {
-            v_flex().gap_2().children(self.browser_replies.iter().map(|record| {
-                let status = match record.send_status.as_str() {
-                    "sent" => "已发送",
-                    "pending" => "待提交",
-                    "submitting" => "提交中",
-                    "duplicate" => "重复回复",
-                    "failed" => "发送失败",
-                    "uncertain" => "待人工核验",
-                    other => other,
-                };
-                let status_color = match record.send_status.as_str() {
-                    "sent" | "duplicate" => theme.success,
-                    "failed" => palette::error_text(),
-                    _ => palette::muted(theme),
-                };
-                v_flex().gap_2().rounded(px(7.)).border_1()
-                    .border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
-                    .child(h_flex().items_center().gap_2()
-                        .child(div().text_size(px(12.)).font_semibold()
-                            .child(if record.author_name.trim().is_empty() { record.account_handle.clone() } else { format!("{} · {}", record.author_name, record.account_handle) }))
-                        .child(div().text_size(px(11.)).font_semibold().text_color(status_color).child(status.to_string()))
-                        .child(div().flex_1())
-                        .child(div().text_size(px(11.)).text_color(palette::muted(theme))
-                            .child(app_log::format_beijing_timestamp(&record.created_at))))
-                    .when_some(record.post_id.clone(), |parent, post_id| {
-                        parent.child(div().text_size(px(10.)).text_color(palette::muted(theme)).child(format!("帖子 ID：{post_id}")))
-                    })
-                    .child(div().text_size(px(12.)).child(format!("原帖：{}", record.post_text)))
-                    .child(div().text_size(px(12.)).text_color(palette::text(theme))
-                        .child(format!("回复：{}", record.reply_text)))
-            })).into_any_element()
-        };
-        v_flex().size_full().min_h_0().gap_2()
-            .child(h_flex().items_center().justify_between()
-                .child(v_flex().gap_1()
-                    .child(div().text_size(px(15.)).font_semibold().child("浏览器助手 · 回复历史"))
-                    .child(div().text_size(px(11.)).text_color(palette::muted(theme))
-                        .child(format!("共 {} 条记录，仅显示浏览器助手产生的回复", self.browser_replies.len()))))
-                .child(Button::new("browser-reply-history-refresh").small().outline().label("刷新")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.reload_browser_reply_history();
-                        cx.notify();
-                    }))))
+        let table = self.browser_reply_table.read(cx);
+        let records = &table.delegate().records;
+        let row_count = records.len();
+        let selected_record = table
+            .selected_row()
+            .and_then(|row| records.get(row))
+            .cloned();
+        let has_selected_record = selected_record.is_some();
+
+        v_flex()
+            .size_full()
+            .min_h_0()
+            .gap_3()
+            .child(
+                v_flex()
+                    .gap_2()
+                    .p_3()
+                    .rounded(px(6.))
+                    .bg(palette::surface_strong(theme))
+                    .border_1()
+                    .border_color(palette::border(theme))
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(div().text_size(px(16.)).font_semibold().child("回复历史"))
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(palette::muted(theme))
+                                            .child(format!("共 {row_count} 条记录，仅显示浏览器助手产生的回复")),
+                                    ),
+                            )
+                            .child(
+                                Button::new("browser-reply-history-refresh")
+                                    .small()
+                                    .outline()
+                                    .label("刷新")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.reload_browser_reply_history(cx);
+                                        cx.notify();
+                                    })),
+                            ),
+                    ),
+            )
             .when_some(self.history_error.clone(), |parent, error| {
-                parent.child(div().text_size(px(11.)).text_color(palette::error_text()).child(error))
+                parent.child(
+                    div()
+                        .rounded(px(6.))
+                        .bg(palette::error_background())
+                        .px_3()
+                        .py_2()
+                        .text_size(px(12.))
+                        .text_color(palette::error_text())
+                        .child(error),
+                )
             })
-            .child(div().flex_1().min_h_0().overflow_y_scrollbar().child(rows))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .gap_3()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .size_full()
+                                    .overflow_hidden()
+                                    .when(row_count == 0, |parent| {
+                                        parent.child(
+                                            div()
+                                                .p_3()
+                                                .text_size(px(12.))
+                                                .text_color(palette::muted(theme))
+                                                .child("暂无浏览器助手回复记录。"),
+                                        )
+                                    })
+                                    .when(row_count > 0, |parent| {
+                                        parent.child(
+                                            DataTable::new(&self.browser_reply_table)
+                                                .stripe(true)
+                                                .bordered(true)
+                                                .scrollbar_visible(true, true),
+                                        )
+                                    }),
+                            ),
+                    )
+                    .when_some(selected_record, |row, record| {
+                        row.child(
+                            v_flex()
+                                .w(px(380.))
+                                .min_w(px(340.))
+                                .h_full()
+                                .min_h_0()
+                                .gap_3()
+                                .p_3()
+                                .rounded(px(8.))
+                                .bg(palette::surface_strong(theme))
+                                .border_1()
+                                .border_color(palette::border(theme))
+                                .child(
+                                    h_flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .child(
+                                            div()
+                                                .text_size(px(14.))
+                                                .font_semibold()
+                                                .child("回复记录详情"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(10.))
+                                                .text_color(palette::muted(theme))
+                                                .child(format!("{} 字符", record.post_text.chars().count())),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("发帖人 / 账号"))
+                                        .child(div().text_size(px(12.)).child(format!("{}  ·  {}", record.author_name, record.account_handle))),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("回复时间（北京时间）"))
+                                        .child(div().text_size(px(12.)).child(app_log::format_beijing_timestamp(&record.created_at))),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("原帖发布时间（北京时间）"))
+                                        .child(div().text_size(px(12.)).child(app_log::format_beijing_timestamp(&record.posted_at_text))),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("帖子 ID"))
+                                        .child(div().text_size(px(12.)).child(record.post_id.clone().unwrap_or_else(|| "未记录".into()))),
+                                )
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .child(
+                                            v_flex()
+                                                .flex_1()
+                                                .gap_1()
+                                                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("最后一步完成"))
+                                                .child(div().text_size(px(12.)).child(if record.completed_last_step { "是" } else { "否" })),
+                                        )
+                                        .child(
+                                            v_flex()
+                                                .flex_1()
+                                                .gap_1()
+                                                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("发送状态"))
+                                                .child(div().text_size(px(12.)).child(match record.send_status.as_str() {
+                                                    "pending" => "待提交",
+                                                    "submitting" => "提交中 / 待核验",
+                                                    "sent" => "已发送",
+                                                    "duplicate" => "已发送过",
+                                                    "failed" => "发送失败",
+                                                    "uncertain" => "待人工核验",
+                                                    _ => "未知",
+                                                })),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .gap_1()
+                                        .child(div().text_size(px(12.)).font_semibold().child("原帖正文"))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_h_0()
+                                                .overflow_y_scrollbar()
+                                                .p_2()
+                                                .rounded(px(6.))
+                                                .bg(theme.background)
+                                                .text_size(px(12.))
+                                                .child(record.post_text.clone()),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .gap_1()
+                                        .child(div().text_size(px(12.)).font_semibold().child("AI 生成回复"))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_h_0()
+                                                .overflow_y_scrollbar()
+                                                .p_2()
+                                                .rounded(px(6.))
+                                                .bg(theme.background)
+                                                .text_size(px(12.))
+                                                .child(record.reply_text.clone()),
+                                        ),
+                                ),
+                        )
+                    })
+                    .when(!has_selected_record, |row| {
+                        row.child(
+                            v_flex()
+                                .w(px(380.))
+                                .h_full()
+                                .justify_center()
+                                .items_center()
+                                .rounded(px(8.))
+                                .border_1()
+                                .border_color(palette::border(theme))
+                                .bg(palette::surface_strong(theme))
+                                .child(div().text_size(px(12.)).text_color(palette::muted(theme)).child("选择左侧一条回复记录查看详情")),
+                        )
+                    }),
+            )
             .into_any_element()
     }
 
