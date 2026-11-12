@@ -25,7 +25,7 @@ use crate::ui::palette;
 enum BrowserTab {
     Status,
     Tasks,
-    History,
+    AutoPost,
     PostHistory,
     ReplyHistory,
     Settings,
@@ -395,8 +395,8 @@ impl BrowserAssistantPage {
 
     fn start_task(&mut self, cx: &mut Context<Self>) {
         if self.busy { return; }
-        let use_x_automation =
-            self.x_settings.auto_reply_enabled || self.x_settings.auto_post_enabled;
+        // 浏览器助手中的自动发帖由独立「自动发帖」工作区启动；这里仅保留自动回复入口。
+        let use_x_automation = self.x_settings.auto_reply_enabled;
         if !use_x_automation && self.steps.is_empty() {
             self.error = Some("任务列表为空，请先在「自动化任务」中添加操作步骤；如果要执行 X 自动化，请到「任务设置」开启自动回复或自动发帖。".into());
             cx.notify();
@@ -411,7 +411,9 @@ impl BrowserAssistantPage {
         let cancel = Arc::clone(&self.cancel);
         let pause = Arc::clone(&self.pause);
         let steps = self.steps.clone();
-        let x_settings = self.x_settings.clone();
+        let mut x_settings = self.x_settings.clone();
+        // 自动回复任务不再顺带触发发帖，两个任务各自启动、各自停止。
+        x_settings.auto_post_enabled = false;
         let x_reply_rules = self.x_reply_rules.read(cx).text().to_string();
         self.log(if use_x_automation {
             "X 自动化启动：将使用浏览器助手自动完成回复/发帖任务。".to_string()
@@ -546,6 +548,89 @@ impl BrowserAssistantPage {
         });
     }
 
+    fn start_auto_post(&mut self, test_once: bool, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        if !test_once && !self.x_settings.auto_post_enabled {
+            self.error = Some("自动发帖开关已关闭，请先到「任务设置」开启。".into());
+            cx.notify();
+            return;
+        }
+
+        self.busy = true;
+        self.paused = false;
+        self.error = None;
+        self.status = if test_once { "正在测试发帖" } else { "自动发帖运行中" }.into();
+        self.cancel = Arc::new(AtomicBool::new(false));
+        self.pause = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::clone(&self.cancel);
+        let filter = crate::ui::x_assistant::auto_post::content::NewsFilter::from_setting(
+            &self.x_settings.auto_post_news_type,
+        );
+        let posts_per_hour = self.x_settings.posts_per_hour;
+        self.log(if test_once {
+            format!("开始单次测试发帖，新闻类型={}，每小时上限={} 条。", self.x_settings.auto_post_news_type, posts_per_hour)
+        } else {
+            format!("开始自动发帖，新闻类型={}，每小时上限={} 条。", self.x_settings.auto_post_news_type, posts_per_hour)
+        });
+        cx.notify();
+
+        self._task = cx.spawn(async move |this, cx| {
+            let result = cx.background_spawn(async move {
+                use crate::ui::x_assistant::auto_post::executor;
+                if test_once {
+                    let result = executor::run_browser_assistant_test_once(
+                        &cancel,
+                        filter,
+                        posts_per_hour,
+                    )?;
+                    Ok::<(u64, String), anyhow::Error>((
+                        u64::from(result.outcome == crate::ui::x_assistant::auto_post::submit::SubmitOutcome::Published),
+                        format!("测试发帖结束：记录 ID={}，结果={:?}，{}", result.post_id, result.outcome, result.message),
+                    ))
+                } else {
+                    let count = executor::run_browser_assistant_auto_post_loop(
+                        &cancel,
+                        filter,
+                        posts_per_hour,
+                    )?;
+                    Ok((count, format!("自动发帖任务已停止，本轮确认发布 {} 条。", count)))
+                }
+            }).await;
+
+            let _ = this.update(cx, |this, cx| {
+                this.busy = false;
+                this.paused = false;
+                match result {
+                    Ok((count, message)) => {
+                        this.status = if test_once { "测试发帖完成" } else { "自动发帖已停止" }.into();
+                        this.success_count += count;
+                        this.log(message.clone());
+                        this.history.insert(
+                            0,
+                            format!("{} | {}", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S"), message),
+                        );
+                    }
+                    Err(error) => {
+                        this.status = "自动发帖异常".into();
+                        this.failed_count += 1;
+                        this.error = Some(format!("{error:#}"));
+                        this.log_error(format!("自动发帖失败：{error:#}"));
+                        this.history.insert(
+                            0,
+                            format!("{} | 自动发帖失败：{error:#}", app_log::beijing_now().format("%Y-%m-%d %H:%M:%S")),
+                        );
+                    }
+                }
+                if this.history.len() > 100 {
+                    this.history.truncate(100);
+                }
+                cx.notify();
+            });
+        });
+    }
+
     fn toggle_pause(&mut self, cx: &mut Context<Self>) {
         if !self.busy { return; }
         self.paused = !self.paused;
@@ -577,6 +662,7 @@ impl BrowserAssistantPage {
                 match tab {
                     BrowserTab::PostHistory => this.reload_browser_post_history(),
                     BrowserTab::ReplyHistory => this.reload_browser_reply_history(cx),
+                    BrowserTab::AutoPost => this.history_error = None,
                     _ => {}
                 }
                 cx.notify();
@@ -593,7 +679,7 @@ impl BrowserAssistantPage {
             .child(status);
         let status_tab = self.tab_button("browser-tab-status", "运行状态", BrowserTab::Status, cx);
         let task_tab = self.tab_button("browser-tab-tasks", "自动化任务", BrowserTab::Tasks, cx);
-        let history_tab = self.tab_button("browser-tab-history", "执行历史", BrowserTab::History, cx);
+        let history_tab = self.tab_button("browser-tab-auto-post", "自动发帖", BrowserTab::AutoPost, cx);
         let post_history_tab = self.tab_button("browser-tab-post-history", "发帖历史", BrowserTab::PostHistory, cx);
         let reply_history_tab = self.tab_button("browser-tab-reply-history", "回复历史", BrowserTab::ReplyHistory, cx);
         let settings_tab = self.tab_button("browser-tab-settings", "任务设置", BrowserTab::Settings, cx);
@@ -721,19 +807,51 @@ impl BrowserAssistantPage {
         content.into_any_element()
     }
 
-    fn render_history(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_auto_post(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let rows = if self.history.is_empty() {
-            v_flex().p_3().child(div().text_size(px(12.)).text_color(palette::muted(theme)).child("暂无执行记录。")).into_any_element()
-        } else {
-            v_flex().gap_1().children(self.history.iter().map(|line| {
-                div().rounded(px(6.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).px_3().py_2()
-                    .text_size(px(11.)).child(line.clone())
-            })).into_any_element()
+        let news_type = match self.x_settings.auto_post_news_type.as_str() {
+            "crypto" => "币圈新闻",
+            "entertainment" => "娱乐新闻",
+            _ => "全部新闻",
         };
-        v_flex().size_full().min_h_0().gap_2()
-            .child(div().text_size(px(13.)).font_semibold().child("本次会话执行记录"))
-            .child(v_flex().flex_1().min_h_0().overflow_y_scrollbar().child(rows))
+        v_flex().size_full().min_h_0().gap_3()
+            .child(v_flex().gap_2().rounded(px(8.)).border_1()
+                .border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
+                .child(div().text_size(px(15.)).font_semibold().child("浏览器助手 · 自动发帖"))
+                .child(div().text_size(px(12.)).text_color(palette::muted(theme))
+                    .child("独立执行自动发帖，不会启动或影响 X 自动回复。"))
+                .child(h_flex().items_center().gap_2()
+                    .child(div().text_size(px(12.)).child("新闻类型"))
+                    .child(div().text_size(px(12.)).font_semibold().child(news_type))
+                    .child(div().flex_1())
+                    .child(div().text_size(px(12.)).child(format!("每小时上限：{} 条", self.x_settings.posts_per_hour)))))
+            .child(v_flex().gap_2().rounded(px(8.)).border_1()
+                .border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
+                .child(div().text_size(px(13.)).font_semibold().child("执行流程"))
+                .child(div().text_size(px(12.)).child("同步所选新闻 RSS → 筛选最近 24 小时 → 排除已发内容 → AI 改写 → OCR 校验 X 发帖页面、正文和按钮 → 提交并核验成功提示。"))
+                .child(div().text_size(px(11.)).text_color(palette::muted(theme))
+                    .child("测试发帖只执行一条真实帖子，并计入每小时上限；如果点击提交后无法确认结果，会标记为待核验，不会自动重发。")))
+            .child(h_flex().items_center().gap_2()
+                .child(Button::new("browser-auto-post-test-once").label("测试发一次").small().outline()
+                    .disabled(self.busy)
+                    .on_click(cx.listener(|this, _, _, cx| this.start_auto_post(true, cx))))
+                .child(Button::new("browser-auto-post-start").label("开始自动发帖").small().primary()
+                    .disabled(self.busy || !self.x_settings.auto_post_enabled)
+                    .on_click(cx.listener(|this, _, _, cx| this.start_auto_post(false, cx))))
+                .child(Button::new("browser-auto-post-stop").label("停止发帖").small().outline()
+                    .disabled(!self.busy)
+                    .on_click(cx.listener(|this, _, _, cx| this.stop_task(cx)))))
+            .when(self.x_settings.auto_post_enabled, |parent| parent.child(
+                div().text_size(px(11.)).text_color(theme.success)
+                    .child("自动发帖开关：已开启")
+            ))
+            .when(!self.x_settings.auto_post_enabled, |parent| parent.child(
+                div().text_size(px(11.)).text_color(palette::muted(theme))
+                    .child("自动发帖开关：已关闭。测试发帖仍可单独执行一次。")
+            ))
+            .when_some(self.error.clone(), |parent, error| parent.child(
+                div().text_size(px(11.)).text_color(palette::error_text()).child(error)
+            ))
             .into_any_element()
     }
 
@@ -1159,7 +1277,7 @@ impl Render for BrowserAssistantPage {
         let body = match self.tab {
             BrowserTab::Status => self.render_status(cx),
             BrowserTab::Tasks => self.render_tasks(cx),
-            BrowserTab::History => self.render_history(cx),
+            BrowserTab::AutoPost => self.render_auto_post(cx),
             BrowserTab::PostHistory => self.render_post_history(cx),
             BrowserTab::ReplyHistory => self.render_reply_history(cx),
             BrowserTab::Settings => self.render_settings(cx),
