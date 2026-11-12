@@ -239,6 +239,7 @@ impl XAssistantPage {
     }
 
     fn start_auto_post(&mut self, cx: &mut Context<Self>) {
+        app_log::x_screenshot_info!("自动发帖启动 | 执行方式=截图/OCR | 任务类型=自动发帖");
         app_log::x_info!(
             "[自动发帖启动] 进入 start_auto_post：replying={}，自动发帖={}",
             self.replying,
@@ -379,6 +380,7 @@ impl XAssistantPage {
     }
 
     fn start_test_auto_post(&mut self, cx: &mut Context<Self>) {
+        app_log::x_screenshot_info!("测试发帖启动 | 执行方式=截图/OCR | 任务类型=单次测试");
         app_log::x_info!("X 自动发帖测试：收到测试按钮点击，当前 replying={}", self.replying);
         if self.replying {
             app_log::x_warn!("X 自动发帖测试：已有自动化任务运行，忽略本次点击");
