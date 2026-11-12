@@ -202,7 +202,7 @@ fn run_once_with_mode(
             return Err(error).with_context(|| format!("执行 X 发帖任务 {} 失败", post.post_id));
         }
     };
-    app_log::post_info!("[自动发帖][12/12] 浏览器提交流程结束，post_id={}，outcome={:?}", result.post_id, result.outcome);
+    app_log::post_info!("[12/12] 浏览器提交流程结束，post_id={}，outcome={:?}", result.post_id, result.outcome);
     Ok(Some(result))
 }
 
