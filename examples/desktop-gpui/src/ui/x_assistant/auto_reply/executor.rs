@@ -49,8 +49,12 @@ impl AutoReplyRunner {
                 return self.stop();
             }
 
-            ensure_daily_reply_capacity()?;
-            wait_for_minute_reply_capacity(cancel)?;
+            // 自动发送关闭时是“仅生成/输入回复”模式，不消耗发送额度，
+            // 因此不应被每日/每分钟发送上限拦截。
+            if options.auto_send {
+                ensure_daily_reply_capacity()?;
+                wait_for_minute_reply_capacity(cancel)?;
+            }
             if Self::is_cancelled(cancel) {
                 return self.stop();
             }
@@ -58,14 +62,21 @@ impl AutoReplyRunner {
             let completed_before = self.completed;
             let result = self.run_once(&options, cancel);
 
-            // 至少有一条回复真正发送成功后，才允许联动自动发帖。
-            // 重复账号、识别不完整或未发送成功都不会提前开启发帖调度。
-            if result.is_ok() && self.completed > completed_before {
-                ensure_daily_reply_capacity()?;
-                if !first_reply_completed {
-                    first_reply_completed = true;
-                    automation::log_event("自动回复首条成功，已启用 10:1 自动发帖调度");
+            // 正常发送模式要求至少有一条真正发送成功后才联动发帖；
+            // 自动发送关闭时，回复流程仍然运行，但不会产生“发送成功”，
+            // 此时以首轮成功处理作为联动自动发帖的启动条件。
+            let reply_turn_completed = result.is_ok()
+                && (self.completed > completed_before || !options.auto_send);
+            if reply_turn_completed && !first_reply_completed {
+                if options.auto_send {
+                    ensure_daily_reply_capacity()?;
                 }
+                first_reply_completed = true;
+                automation::log_event(if options.auto_send {
+                    "自动回复首条成功，已启用 10:1 自动发帖调度"
+                } else {
+                    "自动回复处于仅生成/输入模式，首轮完成后已启用 10:1 自动发帖调度"
+                });
             }
 
             // 用户取消优先于当前轮次产生的错误。
