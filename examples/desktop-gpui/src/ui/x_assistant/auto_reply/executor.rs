@@ -68,7 +68,26 @@ impl AutoReplyRunner {
                 return self.stop();
             }
 
-            result?;
+            if let Err(error) = result {
+                // 最外层兜底：质量拒绝只针对当前帖子，不能从主循环向 UI 冒泡成
+                // “X 自动化异常”。即使中间某层包装/转换了 anyhow 错误，也按稳定错误文本识别。
+                if is_reply_quality_rejection(&error) {
+                    let reason = compact_log_value(&format!("{error:#}"));
+                    app_log::x_browser_info!(
+                        "[跳过当前帖子] AI 回复连续两次未通过质量过滤 | {reason}"
+                    );
+                    automation::log_browser_event(&format!(
+                        "全自动：AI 回复质量过滤不合格，确认尚未输入或发送；跳过当前帖子，继续处理下一条。原因={reason}"
+                    ));
+                    self.failures = 0;
+                    self.scroll_or_recover(
+                        cancel,
+                        "AI 回复质量过滤不合格，最外层兜底跳过当前帖子并查找下一条",
+                    )?;
+                    continue;
+                }
+                return Err(error);
+            }
 
             // 每完成 10 个自动回复轮次，才向自动发帖线程交出一次浏览器使用权。
             // 轮次包括成功、跳过重复内容以及已恢复的普通失败；每轮浏览器操作已完整结束。
