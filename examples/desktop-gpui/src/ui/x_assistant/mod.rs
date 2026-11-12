@@ -738,13 +738,12 @@ impl XAssistantPage {
         div()
             .id("x-task-auto-reply")
             .when(!self.replying, |button| {
-                button.cursor_pointer()
-            })
-            .when(!self.replying, |button| {
-                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：点击自动回复开关");
-                this.toggle_task_setting(TaskSetting::AutoReply, cx);
-            }))
+                button
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        app_log::x_info!("X 任务设置：点击自动回复开关");
+                        this.toggle_task_setting(TaskSetting::AutoReply, cx);
+                    }))
             })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
@@ -760,13 +759,12 @@ impl XAssistantPage {
         div()
             .id("x-task-auto-post")
             .when(!self.replying, |button| {
-                button.cursor_pointer()
-            })
-            .when(!self.replying, |button| {
-                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：点击自动发帖开关");
-                this.toggle_task_setting(TaskSetting::AutoPost, cx);
-            }))
+                button
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        app_log::x_info!("X 任务设置：点击自动发帖开关");
+                        this.toggle_task_setting(TaskSetting::AutoPost, cx);
+                    }))
             })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
@@ -782,13 +780,12 @@ impl XAssistantPage {
         div()
             .id("x-task-auto-comment")
             .when(!self.replying, |button| {
-                button.cursor_pointer()
-            })
-            .when(!self.replying, |button| {
-                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：点击自动评论开关");
-                this.toggle_task_setting(TaskSetting::AutoComment, cx);
-            }))
+                button
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        app_log::x_info!("X 任务设置：点击自动评论开关");
+                        this.toggle_task_setting(TaskSetting::AutoComment, cx);
+                    }))
             })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
@@ -804,13 +801,12 @@ impl XAssistantPage {
         div()
             .id("x-task-own-post-reply")
             .when(!self.replying, |button| {
-                button.cursor_pointer()
-            })
-            .when(!self.replying, |button| {
-                button.on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：点击回复自己帖子评论开关");
-                this.toggle_task_setting(TaskSetting::OwnPostReply, cx);
-            }))
+                button
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        app_log::x_info!("X 任务设置：点击回复自己帖子评论开关");
+                        this.toggle_task_setting(TaskSetting::OwnPostReply, cx);
+                    }))
             })
             .px_3().py_2().rounded(px(6.))
             .border_1().border_color(palette::border(cx.theme()))
