@@ -272,7 +272,7 @@ macro_rules! x_browser_error {
     };
 }
 
-/// 自动发帖日志统一写入 logs/auto-post.log。
+/// 自动发帖日志统一写入 logs/x-assistant-YYYY-MM-DD.log，并标记为截图自动化。
 #[macro_export]
 macro_rules! post_debug {
     ($($arg:tt)*) => {
