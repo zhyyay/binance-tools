@@ -25,6 +25,8 @@ enum BrowserTab {
     Status,
     Tasks,
     History,
+    PostHistory,
+    ReplyHistory,
     Settings,
 }
 
@@ -63,6 +65,9 @@ pub struct BrowserAssistantPage {
     _task: Task<()>,
     x_settings: binance_tools::db::browser_assistant::BrowserAssistantTaskSettings,
     x_reply_rules: Entity<InputState>,
+    browser_posts: Vec<binance_tools::db::x_posting::XPublishedPost>,
+    browser_replies: Vec<binance_tools::db::x_assistant::XAssistantReplyRecord>,
+    history_error: Option<String>,
 }
 
 impl BrowserAssistantPage {
@@ -101,6 +106,9 @@ impl BrowserAssistantPage {
             _task: Task::ready(()),
             x_settings,
             x_reply_rules,
+            browser_posts: Vec::new(),
+            browser_replies: Vec::new(),
+            history_error: None,
         }
     }
 
@@ -195,6 +203,22 @@ impl BrowserAssistantPage {
                 cx.notify();
             });
         });
+    }
+
+    fn reload_browser_post_history(&mut self) {
+        self.history_error = None;
+        match binance_tools::db::x_posting::list_browser_posts_blocking(500) {
+            Ok(records) => self.browser_posts = records,
+            Err(error) => self.history_error = Some(format!("读取浏览器助手发帖历史失败：{error:#}")),
+        }
+    }
+
+    fn reload_browser_reply_history(&mut self) {
+        self.history_error = None;
+        match binance_tools::db::x_assistant::list_reply_records_by_method_blocking("browser") {
+            Ok(records) => self.browser_replies = records,
+            Err(error) => self.history_error = Some(format!("读取浏览器助手回复历史失败：{error:#}")),
+        }
     }
 
     fn persist_x_settings(&self) {
@@ -435,6 +459,11 @@ impl BrowserAssistantPage {
             .when(!active, |button| button.outline())
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.tab = tab;
+                match tab {
+                    BrowserTab::PostHistory => this.reload_browser_post_history(),
+                    BrowserTab::ReplyHistory => this.reload_browser_reply_history(),
+                    _ => {}
+                }
                 cx.notify();
             }))
             .into_any_element()
@@ -450,6 +479,8 @@ impl BrowserAssistantPage {
         let status_tab = self.tab_button("browser-tab-status", "运行状态", BrowserTab::Status, cx);
         let task_tab = self.tab_button("browser-tab-tasks", "自动化任务", BrowserTab::Tasks, cx);
         let history_tab = self.tab_button("browser-tab-history", "执行历史", BrowserTab::History, cx);
+        let post_history_tab = self.tab_button("browser-tab-post-history", "发帖历史", BrowserTab::PostHistory, cx);
+        let reply_history_tab = self.tab_button("browser-tab-reply-history", "回复历史", BrowserTab::ReplyHistory, cx);
         let settings_tab = self.tab_button("browser-tab-settings", "任务设置", BrowserTab::Settings, cx);
         let check = Button::new("browser-check-connection").label("检测连接").small().outline()
             .disabled(self.busy)
@@ -464,7 +495,8 @@ impl BrowserAssistantPage {
             .disabled(!self.busy)
             .on_click(cx.listener(|this, _, _, cx| this.stop_task(cx))).into_any_element();
         h_flex().items_end().gap_2()
-            .child(status_tab).child(task_tab).child(history_tab).child(settings_tab)
+            .child(status_tab).child(task_tab).child(history_tab)
+            .child(post_history_tab).child(reply_history_tab).child(settings_tab)
             .child(div().flex_1()).child(status_button)
             .child(check).child(start).child(pause).child(stop)
             .into_any_element()
@@ -587,6 +619,121 @@ impl BrowserAssistantPage {
         v_flex().size_full().min_h_0().gap_2()
             .child(div().text_size(px(13.)).font_semibold().child("本次会话执行记录"))
             .child(v_flex().flex_1().min_h_0().overflow_y_scrollbar().child(rows))
+            .into_any_element()
+    }
+
+    fn render_post_history(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let rows = if self.browser_posts.is_empty() {
+            v_flex().p_3().child(
+                div().text_size(px(12.)).text_color(palette::muted(theme))
+                    .child("暂无浏览器助手发帖记录。"),
+            ).into_any_element()
+        } else {
+            v_flex().gap_2().children(self.browser_posts.iter().map(|record| {
+                let status = match record.status.as_str() {
+                    "published" => "已发布",
+                    "pending" => "待发布",
+                    "submitting" => "发布中",
+                    "unknown" => "结果待确认",
+                    "failed" => "发布失败",
+                    other => other,
+                };
+                let status_color = match record.status.as_str() {
+                    "published" => theme.success,
+                    "failed" => palette::error_text(),
+                    _ => palette::muted(theme),
+                };
+                v_flex().gap_2().rounded(px(7.)).border_1()
+                    .border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
+                    .child(h_flex().items_center().gap_2()
+                        .child(div().text_size(px(12.)).font_semibold().child(format!("发帖记录 #{}", record.id)))
+                        .child(div().text_size(px(11.)).font_semibold().text_color(status_color).child(status.to_string()))
+                        .child(div().flex_1())
+                        .child(div().text_size(px(11.)).text_color(palette::muted(theme))
+                            .child(app_log::format_beijing_timestamp(record.published_at.as_deref().unwrap_or(&record.created_at)))))
+                    .child(div().text_size(px(12.)).child(record.content.clone()))
+                    .when_some(record.x_post_url.clone(), |parent, url| {
+                        parent.child(div().text_size(px(11.)).text_color(palette::muted(theme)).child(url))
+                    })
+                    .when_some(record.last_error.clone(), |parent, error| {
+                        parent.child(div().text_size(px(11.)).text_color(palette::error_text()).child(error))
+                    })
+            })).into_any_element()
+        };
+        v_flex().size_full().min_h_0().gap_2()
+            .child(h_flex().items_center().justify_between()
+                .child(v_flex().gap_1()
+                    .child(div().text_size(px(15.)).font_semibold().child("浏览器助手 · 发帖历史"))
+                    .child(div().text_size(px(11.)).text_color(palette::muted(theme))
+                        .child(format!("共 {} 条记录，仅显示浏览器助手提交的帖子", self.browser_posts.len()))))
+                .child(Button::new("browser-post-history-refresh").small().outline().label("刷新")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.reload_browser_post_history();
+                        cx.notify();
+                    }))))
+            .when_some(self.history_error.clone(), |parent, error| {
+                parent.child(div().text_size(px(11.)).text_color(palette::error_text()).child(error))
+            })
+            .child(div().flex_1().min_h_0().overflow_y_scrollbar().child(rows))
+            .into_any_element()
+    }
+
+    fn render_reply_history(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let rows = if self.browser_replies.is_empty() {
+            v_flex().p_3().child(
+                div().text_size(px(12.)).text_color(palette::muted(theme))
+                    .child("暂无浏览器助手回复记录。"),
+            ).into_any_element()
+        } else {
+            v_flex().gap_2().children(self.browser_replies.iter().map(|record| {
+                let status = match record.send_status.as_str() {
+                    "sent" => "已发送",
+                    "pending" => "待提交",
+                    "submitting" => "提交中",
+                    "duplicate" => "重复回复",
+                    "failed" => "发送失败",
+                    "uncertain" => "待人工核验",
+                    other => other,
+                };
+                let status_color = match record.send_status.as_str() {
+                    "sent" | "duplicate" => theme.success,
+                    "failed" => palette::error_text(),
+                    _ => palette::muted(theme),
+                };
+                v_flex().gap_2().rounded(px(7.)).border_1()
+                    .border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
+                    .child(h_flex().items_center().gap_2()
+                        .child(div().text_size(px(12.)).font_semibold()
+                            .child(if record.author_name.trim().is_empty() { record.account_handle.clone() } else { format!("{} · {}", record.author_name, record.account_handle) }))
+                        .child(div().text_size(px(11.)).font_semibold().text_color(status_color).child(status.to_string()))
+                        .child(div().flex_1())
+                        .child(div().text_size(px(11.)).text_color(palette::muted(theme))
+                            .child(app_log::format_beijing_timestamp(&record.created_at))))
+                    .when_some(record.post_id.clone(), |parent, post_id| {
+                        parent.child(div().text_size(px(10.)).text_color(palette::muted(theme)).child(format!("帖子 ID：{post_id}")))
+                    })
+                    .child(div().text_size(px(12.)).child(format!("原帖：{}", record.post_text)))
+                    .child(div().text_size(px(12.)).text_color(palette::text(theme))
+                        .child(format!("回复：{}", record.reply_text)))
+            })).into_any_element()
+        };
+        v_flex().size_full().min_h_0().gap_2()
+            .child(h_flex().items_center().justify_between()
+                .child(v_flex().gap_1()
+                    .child(div().text_size(px(15.)).font_semibold().child("浏览器助手 · 回复历史"))
+                    .child(div().text_size(px(11.)).text_color(palette::muted(theme))
+                        .child(format!("共 {} 条记录，仅显示浏览器助手产生的回复", self.browser_replies.len()))))
+                .child(Button::new("browser-reply-history-refresh").small().outline().label("刷新")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.reload_browser_reply_history();
+                        cx.notify();
+                    }))))
+            .when_some(self.history_error.clone(), |parent, error| {
+                parent.child(div().text_size(px(11.)).text_color(palette::error_text()).child(error))
+            })
+            .child(div().flex_1().min_h_0().overflow_y_scrollbar().child(rows))
             .into_any_element()
     }
 
@@ -721,6 +868,8 @@ impl Render for BrowserAssistantPage {
             BrowserTab::Status => self.render_status(cx),
             BrowserTab::Tasks => self.render_tasks(cx),
             BrowserTab::History => self.render_history(cx),
+            BrowserTab::PostHistory => self.render_post_history(cx),
+            BrowserTab::ReplyHistory => self.render_reply_history(cx),
             BrowserTab::Settings => self.render_settings(cx),
         };
         v_flex().size_full().min_h_0().gap_3()
