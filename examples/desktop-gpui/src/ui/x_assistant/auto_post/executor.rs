@@ -13,9 +13,12 @@ use std::{
 };
 
 use anyhow::{Context, ensure};
+use browser_assistant_client::BrowserClient;
+use browser_core::BrowserCommand;
+use serde_json::Value;
 
 use super::{
-    content::{NewsFilter, prepare_next_post_blocking},
+    content::{NewsFilter, PreparedPost, prepare_next_post_blocking},
     submit::{SubmitOutcome, SubmitResult, submit_prepared_post},
 };
 use crate::ui::x_assistant::core::{scheduler::next_post_delay, task_queue::run_browser_task};
@@ -137,6 +140,7 @@ fn run_once_with_mode(
     filter: NewsFilter,
     require_enabled: bool,
     hourly_limit_override: Option<u8>,
+    use_browser_assistant: bool,
 ) -> anyhow::Result<Option<SubmitResult>> {
     app_log::post_info!("[01/12] 单次任务启动，filter={:?}，require_enabled={}", filter, require_enabled);
     ensure!(!cancel.load(Ordering::Acquire), "自动发帖已停止");
@@ -192,7 +196,13 @@ fn run_once_with_mode(
         }
     }
     app_log::post_info!("[07/12] 等待浏览器锁并准备提交");
-    let result = match run_browser_task(|| submit_prepared_post(&post, cancel)) {
+    let result = match run_browser_task(|| {
+        if use_browser_assistant {
+            submit_prepared_post_via_browser_assistant(&post, cancel)
+        } else {
+            submit_prepared_post(&post, cancel)
+        }
+    }) {
         Ok(result) => result,
         Err(error) => {
             let error_chain = format!("{error:#}");
@@ -214,13 +224,115 @@ fn run_once_with_mode(
     Ok(Some(result))
 }
 
+/// 浏览器助手专用发帖：通过 Chrome 扩展的 PostXTweet 命令操作 X 页面，
+/// 不调用桌面截图、OCR、窗口激活或鼠标坐标接口。
+fn submit_prepared_post_via_browser_assistant(
+    post: &PreparedPost,
+    cancel: &AtomicBool,
+) -> anyhow::Result<SubmitResult> {
+    ensure!(
+        !cancel.load(Ordering::Acquire),
+        "自动发帖已停止，尚未向浏览器发送提交命令"
+    );
+
+    app_log::post_info!(
+        "[浏览器助手发帖] 连接 Native Host，post_id={}，正文长度={} 字符",
+        post.post_id,
+        post.content.chars().count()
+    );
+    let mut client = BrowserClient::connect()
+        .context("无法连接浏览器助手 Native Host；请检查扩展和 Native Host 安装")?;
+
+    let page = client.execute(BrowserCommand::GetPageInfo)
+        .context("读取浏览器助手当前标签页失败")?;
+    ensure!(
+        page.ok,
+        "读取浏览器助手当前标签页失败：{}",
+        page.error.unwrap_or_default()
+    );
+    let page = page.result.unwrap_or(Value::Null);
+    let url = page.get("url").and_then(Value::as_str).unwrap_or_default();
+    ensure!(
+        url.starts_with("https://x.com/") || url == "https://x.com",
+        "浏览器当前活动标签页不是 X 页面（{}）；请先在浏览器助手中打开已登录的 X 页面",
+        url
+    );
+
+    ensure!(
+        !cancel.load(Ordering::Acquire),
+        "自动发帖已停止，尚未向 X 提交内容"
+    );
+    binance_tools::db::x_posting::mark_post_submitting_blocking(post.post_id)?;
+    app_log::post_info!(
+        "[浏览器助手发帖] 调用扩展 PostXTweet，当前页面={}；由扩展定位编辑框、输入正文、核验并提交",
+        url
+    );
+
+    let response = match client.execute(BrowserCommand::PostXTweet {
+        text: post.content.clone(),
+    }) {
+        Ok(response) => response,
+        Err(error) => {
+            let reason = format!("浏览器扩展发帖命令连接异常，无法确认是否已提交：{error:#}");
+            binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
+            anyhow::bail!("SEND_UNCERTAIN: {reason}");
+        }
+    };
+
+    if !response.ok {
+        let reason = response.error.unwrap_or_else(|| "浏览器扩展发帖命令失败，提交状态无法确认".into());
+        binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
+        anyhow::bail!("SEND_UNCERTAIN: {reason}");
+    }
+
+    let result = response.result.unwrap_or(Value::Null);
+    match result.get("status").and_then(Value::as_str) {
+        Some("sent") if result.get("confirmed").and_then(Value::as_bool) == Some(true) => {
+            binance_tools::db::x_posting::mark_post_published_blocking(post.post_id, None)?;
+            let confirmation = result.get("confirmation")
+                .and_then(Value::as_str)
+                .unwrap_or("X 页面已确认发帖成功");
+            app_log::post_info!(
+                "[浏览器助手发帖] 已确认发布，post_id={}，提示={}",
+                post.post_id,
+                confirmation
+            );
+            Ok(SubmitResult {
+                post_id: post.post_id,
+                outcome: SubmitOutcome::Published,
+                message: format!("浏览器扩展已确认发布成功：{confirmation}"),
+            })
+        }
+        Some("confirmation_unknown") => {
+            let reason = result.get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("扩展已执行提交，但未检测到明确的发帖成功提示");
+            binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, reason)?;
+            Ok(SubmitResult {
+                post_id: post.post_id,
+                outcome: SubmitOutcome::Unknown,
+                message: reason.to_string(),
+            })
+        }
+        _ => {
+            let reason = format!("浏览器扩展返回未知发帖状态：{result}");
+            binance_tools::db::x_posting::mark_post_unknown_blocking(post.post_id, &reason)?;
+            Ok(SubmitResult {
+                post_id: post.post_id,
+                outcome: SubmitOutcome::Unknown,
+                message: reason,
+            })
+        }
+    }
+}
+
 pub fn run_once(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<Option<SubmitResult>> {
-    run_once_with_mode(cancel, filter, true, None)
+    run_once_with_mode(cancel, filter, true, None, false)
 }
 
 /// 测试按钮只准备并提交一条真实帖子，不启动持续循环；测试帖子同样计入小时限额。
 pub fn run_test_once(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<SubmitResult> {
-    let result = run_once_with_mode(cancel, filter, false, None)?
+    let result = run_once_with_mode(cancel, filter, false, None, false)?
         .context("所选新闻类型没有可用于测试的未发布候选")?;
     Ok(result)
 }
@@ -231,7 +343,7 @@ pub fn run_browser_assistant_test_once(
     filter: NewsFilter,
     posts_per_hour: u8,
 ) -> anyhow::Result<SubmitResult> {
-    let result = run_once_with_mode(cancel, filter, false, Some(posts_per_hour))?
+    let result = run_once_with_mode(cancel, filter, false, Some(posts_per_hour), true)?
         .context("所选新闻类型没有可用于测试的未发布候选")?;
     Ok(result)
 }
@@ -275,7 +387,7 @@ pub fn run_browser_assistant_auto_post_loop(
             continue;
         }
 
-        match run_once_with_mode(cancel, filter, false, Some(posts_per_hour))? {
+        match run_once_with_mode(cancel, filter, false, Some(posts_per_hour), true)? {
             Some(result) if result.outcome == SubmitOutcome::Published => {
                 published_this_run += 1;
                 crate::ui::x_assistant::automation::log_post_event(&format!(
