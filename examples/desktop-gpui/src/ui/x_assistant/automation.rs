@@ -1,11 +1,32 @@
 pub(super) fn log_event(message: &str) {
-    app_log::x_info!("{}", message);
+    log_screenshot_event(message);
 }
 
-/// 自动发帖流程日志与自动回复日志分开保存，便于按任务定位问题。
+/// 截图/OCR/视觉模型路径统一使用该入口。
+pub(super) fn log_screenshot_event(message: &str) {
+    let _ = app_log::write_to(
+        "x-assistant.log",
+        app_log::Level::Info,
+        format!("[X助手][截图自动化] {message}"),
+    );
+}
+
+/// Chrome 扩展 DOM 路径统一使用该入口。
+pub(super) fn log_browser_event(message: &str) {
+    let _ = app_log::write_to(
+        "x-assistant.log",
+        app_log::Level::Info,
+        format!("[X助手][浏览器自动化] {message}"),
+    );
+}
+
+/// 自动发帖使用截图/OCR 操作浏览器，日志归入截图自动化分类。
 pub(super) fn log_post_event(message: &str) {
-    // 调用方已经带有 [自动发帖] / [步骤] 标签，不再重复添加模块前缀。
-    let _ = app_log::write_to("auto-post.log", app_log::Level::Info, message);
+    let _ = app_log::write_to(
+        "x-assistant.log",
+        app_log::Level::Info,
+        format!("[X助手][截图自动化][自动发帖] {message}"),
+    );
 }
 
 #[cfg(windows)]
