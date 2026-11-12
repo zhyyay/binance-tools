@@ -578,6 +578,7 @@ fn is_pre_submit_reply_error(message: &str) -> bool {
         "REPLY_EDITOR_DISABLED",
         "REPLY_EDITOR_TIMEOUT",
         "REPLY_CONTENT_VERIFY_FAILED",
+        "REPLY_COMPOSER_CLOSE_FAILED",
         "REPLY_SUBMIT_BUTTON_NOT_FOUND",
     ];
     ERROR_CODES.iter().any(|code| message.contains(code))
@@ -611,6 +612,9 @@ mod tests {
         ));
         assert!(super::is_pre_submit_reply_error(
             "REPLY_CONTENT_VERIFY_FAILED: 回复内容输入后校验不一致，未提交"
+        ));
+        assert!(super::is_pre_submit_reply_error(
+            "REPLY_COMPOSER_CLOSE_FAILED: 回复文本校验失败且无法确认关闭当前回复框；未点击发送"
         ));
         assert!(!super::is_pre_submit_reply_error(
             "Native Host disconnected during command"
