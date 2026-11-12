@@ -161,6 +161,7 @@ pub struct BrowserAssistantPage {
     browser_posts: Vec<binance_tools::db::x_posting::XPublishedPost>,
     browser_replies: Vec<binance_tools::db::x_assistant::XAssistantReplyRecord>,
     browser_reply_table: Entity<TableState<BrowserReplyTableDelegate>>,
+    reply_detail_hidden_row: Option<usize>,
     history_error: Option<String>,
 }
 
@@ -208,6 +209,7 @@ impl BrowserAssistantPage {
             browser_posts: Vec::new(),
             browser_replies: Vec::new(),
             browser_reply_table,
+            reply_detail_hidden_row: None,
             history_error: None,
         }
     }
@@ -323,6 +325,8 @@ impl BrowserAssistantPage {
         match binance_tools::db::x_assistant::list_reply_records_by_method_blocking("browser") {
             Ok(records) => {
                 self.browser_replies = records.clone();
+                // 刷新后默认收起详情；用户重新点击某一行时再显示。
+                self.reply_detail_hidden_row = self.browser_reply_table.read(cx).selected_row();
                 self.browser_reply_table.update(cx, |table, cx| {
                     table.delegate_mut().set_records(records);
                     table.refresh(cx);
@@ -795,8 +799,9 @@ impl BrowserAssistantPage {
         let table = self.browser_reply_table.read(cx);
         let records = &table.delegate().records;
         let row_count = records.len();
-        let selected_record = table
-            .selected_row()
+        let selected_row = table.selected_row();
+        let selected_record = selected_row
+            .filter(|row| self.reply_detail_hidden_row != Some(*row))
             .and_then(|row| records.get(row))
             .cloned();
         let has_selected_record = selected_record.is_some();
@@ -887,6 +892,7 @@ impl BrowserAssistantPage {
                             ),
                     )
                     .when_some(selected_record, |row, record| {
+                        let row_index = selected_row.expect("selected record must have a selected row");
                         row.child(
                             v_flex()
                                 .w(px(380.))
@@ -910,10 +916,25 @@ impl BrowserAssistantPage {
                                                 .child("回复记录详情"),
                                         )
                                         .child(
-                                            div()
-                                                .text_size(px(10.))
-                                                .text_color(palette::muted(theme))
-                                                .child(format!("{} 字符", record.post_text.chars().count())),
+                                            h_flex()
+                                                .items_center()
+                                                .gap_2()
+                                                .child(
+                                                    div()
+                                                        .text_size(px(10.))
+                                                        .text_color(palette::muted(theme))
+                                                        .child(format!("{} 字符", record.post_text.chars().count())),
+                                                )
+                                                .child(
+                                                    Button::new("browser-reply-detail-close")
+                                                        .small()
+                                                        .ghost()
+                                                        .label("收起")
+                                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                                            this.reply_detail_hidden_row = Some(row_index);
+                                                            cx.notify();
+                                                        })),
+                                                ),
                                         ),
                                 )
                                 .child(
@@ -1004,19 +1025,6 @@ impl BrowserAssistantPage {
                                 ),
                         )
                     })
-                    .when(!has_selected_record, |row| {
-                        row.child(
-                            v_flex()
-                                .w(px(380.))
-                                .h_full()
-                                .justify_center()
-                                .items_center()
-                                .rounded(px(8.))
-                                .border_1()
-                                .border_color(palette::border(theme))
-                                .bg(palette::surface_strong(theme))
-                                .child(div().text_size(px(12.)).text_color(palette::muted(theme)).child("选择左侧一条回复记录查看详情")),
-                        )
                     }),
             )
             .into_any_element()
