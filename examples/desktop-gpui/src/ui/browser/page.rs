@@ -61,6 +61,8 @@ pub struct BrowserAssistantPage {
     success_count: u64,
     failed_count: u64,
     _task: Task<()>,
+    x_settings: binance_tools::db::browser_assistant::BrowserAssistantTaskSettings,
+    x_reply_rules: Entity<InputState>,
 }
 
 impl BrowserAssistantPage {
@@ -73,6 +75,14 @@ impl BrowserAssistantPage {
         let text_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("需要输入到网页的文本")
         });
+        let x_reply_rules = cx.new(|cx| {
+            InputState::new(window, cx)
+                .auto_grow(3, 8)
+                .placeholder("输入浏览器 X 自动回复规则，例如：简短、自然、不要照抄原文。")
+                .default_value("简短、自然地回应帖子，不要照抄正文。")
+        });
+        let x_settings = binance_tools::db::browser_assistant::load_task_settings_blocking()
+            .unwrap_or_default();
         Self {
             tab: BrowserTab::Status,
             selector,
@@ -89,6 +99,8 @@ impl BrowserAssistantPage {
             success_count: 0,
             failed_count: 0,
             _task: Task::ready(()),
+            x_settings,
+            x_reply_rules,
         }
     }
 
@@ -185,10 +197,57 @@ impl BrowserAssistantPage {
         });
     }
 
+    fn persist_x_settings(&self) {
+        if let Err(error) = binance_tools::db::browser_assistant::save_task_settings_blocking(&self.x_settings) {
+            app_log::error!("[浏览器助手] 保存 X 自动化设置失败：{error:#}");
+        }
+    }
+
+    fn adjust_daily_reply_limit(&mut self, delta: i16, cx: &mut Context<Self>) {
+        let current = i32::from(self.x_settings.daily_reply_limit);
+        self.x_settings.daily_reply_limit = (current + i32::from(delta)).clamp(100, 2_000) as u16;
+        self.persist_x_settings();
+        cx.notify();
+    }
+
+    fn adjust_per_minute_reply_limit(&mut self, delta: i16, cx: &mut Context<Self>) {
+        let current = i32::from(self.x_settings.per_minute_reply_limit);
+        self.x_settings.per_minute_reply_limit = (current + i32::from(delta)).clamp(1, 60) as u8;
+        self.persist_x_settings();
+        cx.notify();
+    }
+
+    fn adjust_posts_per_hour(&mut self, delta: i16, cx: &mut Context<Self>) {
+        let current = i32::from(self.x_settings.posts_per_hour);
+        self.x_settings.posts_per_hour = (current + i32::from(delta)).clamp(1, 10) as u8;
+        self.persist_x_settings();
+        cx.notify();
+    }
+
+    fn toggle_x_auto_reply(&mut self, cx: &mut Context<Self>) {
+        self.x_settings.auto_reply_enabled = !self.x_settings.auto_reply_enabled;
+        self.persist_x_settings();
+        cx.notify();
+    }
+
+    fn toggle_x_auto_post(&mut self, cx: &mut Context<Self>) {
+        self.x_settings.auto_post_enabled = !self.x_settings.auto_post_enabled;
+        self.persist_x_settings();
+        cx.notify();
+    }
+
+    fn toggle_x_auto_send(&mut self, cx: &mut Context<Self>) {
+        self.x_settings.auto_send = !self.x_settings.auto_send;
+        self.persist_x_settings();
+        cx.notify();
+    }
+
     fn start_task(&mut self, cx: &mut Context<Self>) {
         if self.busy { return; }
-        if self.steps.is_empty() {
-            self.error = Some("任务列表为空，请先在「自动化任务」中添加操作步骤。".into());
+        let use_x_automation =
+            self.x_settings.auto_reply_enabled || self.x_settings.auto_post_enabled;
+        if !use_x_automation && self.steps.is_empty() {
+            self.error = Some("任务列表为空，请先在「自动化任务」中添加操作步骤；如果要执行 X 自动化，请到「任务设置」开启自动回复或自动发帖。".into());
             cx.notify();
             return;
         }
@@ -201,10 +260,67 @@ impl BrowserAssistantPage {
         let cancel = Arc::clone(&self.cancel);
         let pause = Arc::clone(&self.pause);
         let steps = self.steps.clone();
-        self.log(format!("任务启动，共 {} 个步骤；正在连接浏览器", steps.len()));
+        let x_settings = self.x_settings.clone();
+        let x_reply_rules = self.x_reply_rules.read(cx).text().to_string();
+        self.log(if use_x_automation {
+            "X 自动化启动：将使用浏览器助手自动完成回复/发帖任务。"
+        } else {
+            &format!("任务启动，共 {} 个步骤；正在连接浏览器", steps.len())
+        });
         cx.notify();
 
         self._task = cx.spawn(async move |this, cx| {
+            if use_x_automation {
+                let result = cx.background_spawn(async move {
+                    crate::ui::browser::x_automation::run(
+                        &cancel,
+                        x_settings,
+                        x_reply_rules,
+                    )
+                }).await;
+                let _ = this.update(cx, |this, cx| {
+                    this.busy = false;
+                    this.paused = false;
+                    match result {
+                        Ok((reply_count, post_count)) => {
+                            this.status = "X 自动化已停止".into();
+                            this.success_count += reply_count + post_count;
+                            this.log(format!(
+                                "X 自动化结束：本轮回复 {} 条，发帖 {} 条。",
+                                reply_count, post_count
+                            ));
+                            this.history.insert(
+                                0,
+                                format!(
+                                    "{} | X 自动化完成：回复 {}，发帖 {}",
+                                    app_log::beijing_now().format("%Y-%m-%d %H:%M:%S"),
+                                    reply_count,
+                                    post_count
+                                ),
+                            );
+                        }
+                        Err(error) => {
+                            this.status = "X 自动化异常".into();
+                            this.failed_count += 1;
+                            this.error = Some(format!("{error:#}"));
+                            this.log(format!("X 自动化异常：{error:#}"));
+                            this.history.insert(
+                                0,
+                                format!(
+                                    "{} | X 自动化失败：{error:#}",
+                                    app_log::beijing_now().format("%Y-%m-%d %H:%M:%S")
+                                ),
+                            );
+                        }
+                    }
+                    if this.history.len() > 100 {
+                        this.history.truncate(100);
+                    }
+                    cx.notify();
+                });
+                return;
+            }
+
             let mut completed = 0usize;
             let mut failure: Option<String> = None;
             for (index, step) in steps.iter().enumerate() {
