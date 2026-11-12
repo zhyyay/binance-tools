@@ -293,6 +293,15 @@ fn run_reply_round(
 
         if !response.ok {
             let reason = response.error.unwrap_or_else(|| "浏览器插件回复命令失败".into());
+            if is_pre_submit_reply_error(&reason) {
+                x_assistant::mark_reply_failed_blocking(&run_id, &reason)?;
+                app_log::x_info!(
+                    "浏览器助手：[回复] post_id={} 提交前检查失败，确认未点击发送按钮：{}",
+                    post_id,
+                    reason
+                );
+                bail!("{reason}");
+            }
             x_assistant::mark_reply_uncertain_blocking(&run_id, &reason)?;
             bail!("SEND_UNCERTAIN: {reason}");
         }
@@ -432,6 +441,28 @@ fn string_at(value: &Value, path: &[&str]) -> String {
     current.as_str().unwrap_or_default().trim().to_string()
 }
 
+/// These extension errors are raised before any reply submit click is issued.
+fn is_pre_submit_reply_error(message: &str) -> bool {
+    const ERROR_CODES: &[&str] = &[
+        "PAGE_CHANGED",
+        "INVALID_POST_ID",
+        "INVALID_CONTENT",
+        "RATE_LIMITED",
+        "GLOBAL_STOP",
+        "CHALLENGE_DETECTED",
+        "POST_NOT_FOUND",
+        "REPLY_BUTTON_NOT_FOUND",
+        "REPLY_BUTTON_OUTSIDE_VIEWPORT",
+        "REPLY_DIALOG_NOT_FOUND",
+        "REPLY_EDITOR_NOT_FOUND",
+        "REPLY_EDITOR_DISABLED",
+        "REPLY_EDITOR_TIMEOUT",
+        "REPLY_CONTENT_VERIFY_FAILED",
+        "REPLY_SUBMIT_BUTTON_NOT_FOUND",
+    ];
+    ERROR_CODES.iter().any(|code| message.contains(code))
+}
+
 fn is_rate_limited(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("rate limit")
@@ -451,6 +482,19 @@ mod tests {
         assert!(is_x_timeline_error_page("出错了。请尝试重新加载。"));
         assert!(is_x_timeline_error_page("Something went wrong. Try reloading."));
         assert!(!is_x_timeline_error_page("Home\nFor you\nFollowing"));
+    }
+
+    #[test]
+    fn reply_editor_timeout_is_a_confirmed_pre_submit_failure() {
+        assert!(super::is_pre_submit_reply_error(
+            "REPLY_EDITOR_TIMEOUT: 等待目标推文回复窗口超时"
+        ));
+        assert!(super::is_pre_submit_reply_error(
+            "REPLY_CONTENT_VERIFY_FAILED: 回复内容输入后校验不一致，未提交"
+        ));
+        assert!(!super::is_pre_submit_reply_error(
+            "Native Host disconnected during command"
+        ));
     }
 
     #[test]
