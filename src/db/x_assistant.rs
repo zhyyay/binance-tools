@@ -389,6 +389,8 @@ mod tests {
             "CREATE TABLE x_assistant_reply_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id TEXT NOT NULL UNIQUE,
+                post_id TEXT,
+                reply_method TEXT NOT NULL DEFAULT 'screenshot',
                 author_name TEXT NOT NULL DEFAULT '',
                 account_handle TEXT NOT NULL DEFAULT '',
                 posted_at_text TEXT NOT NULL DEFAULT '',
