@@ -14,26 +14,42 @@ use super::ocr;
 use super::ocr_status::recognize_send_status;
 use super::reply_filter;
 
-/// 回复弹窗已确认打开后才调用此函数。若两次生成均未通过质量过滤，
-/// 使用 Escape 关闭当前帖子的回复弹窗，避免留下未完成的提交页面。
+/// 回复弹窗已确认打开后才调用此函数。质量过滤失败时识别并点击弹窗自身的关闭图标。
 fn generate_reply_or_close_composer(
     options: &VisionReplyOptions,
     prompt: &str,
     source_post: &str,
     cancel: &AtomicBool,
+    screenshot_dir: &Path,
+    post_id: &impl std::fmt::Display,
+    screenshots: &mut Vec<PathBuf>,
 ) -> anyhow::Result<String> {
     match reply_filter::generate_compliant_reply(options, prompt, source_post, cancel) {
         Ok(reply) => Ok(reply),
         Err(error) if error.downcast_ref::<reply_filter::ReplyQualityRejected>().is_some() => {
             automation::log_event(
-                "当前帖子回复连续两次未通过质量过滤，已放弃该帖子；准备关闭回复弹窗。",
+                "当前帖子回复连续两次未通过质量过滤，已放弃该帖子；准备识别并点击关闭图标。",
             );
-            native::press_escape().context("回复质量过滤失败，按 Escape 关闭当前回复弹窗失败")?;
-            thread::sleep(Duration::from_millis(250));
+            check_cancel(cancel)?;
+            let before_close = capture(screenshot_dir, post_id, "reply-quality-rejected", screenshots)?;
+            let (close_x, close_y) = ocr::locate_reply_close_button(&before_close.png)?
+                .ok_or_else(|| anyhow::anyhow!(
+                    "回复质量过滤失败，但未能可靠识别回复弹窗关闭图标；未执行点击，已停止自动化"
+                ))?;
+            native::move_cursor_to_reply(close_x, close_y)
+                .context("移动鼠标到已识别的回复弹窗关闭图标失败")?;
+            native::click_current_position()
+                .context("点击已识别的回复弹窗关闭图标失败")?;
+            thread::sleep(Duration::from_millis(300));
+            let after_close = capture(screenshot_dir, post_id, "reply-quality-closed", screenshots)?;
+            anyhow::ensure!(
+                !ocr::reply_composer_is_open(&after_close.png)?,
+                "已点击回复弹窗关闭图标，但截图仍检测到弹窗；停止自动化，不处理下一条帖子"
+            );
             automation::log_event(
-                "已按 Escape 关闭当前回复弹窗；本条未输入、未发送，将继续处理下一条帖子。",
+                "已通过识别坐标点击关闭图标，并通过截图确认回复弹窗关闭；本条未输入、未发送。",
             );
-            Err(error).context("回复连续两次未通过质量过滤；已关闭当前回复弹窗，未输入或发送")
+            Err(error).context("回复连续两次未通过质量过滤；已点击关闭图标并确认弹窗关闭，未输入或发送")
         }
         Err(error) => Err(error),
     }
@@ -1280,7 +1296,9 @@ fn run_visual_reply_inner(
             "严格遵守下面列出的每一条回复规则；规则之间不得取舍。生成一条不换行、使用原帖主要语言的回复，只返回回复正文，不要解释或加引号。输出前逐条核对，任一规则不满足就重新生成。\n帖子正文：{post_text}\n回复规则：{}",
             options.reply_rules.trim()
         );
-        let reply_text = generate_reply_or_close_composer(&options, &prompt, &post_text, cancel)?;
+        let reply_text = generate_reply_or_close_composer(
+            &options, &prompt, &post_text, cancel, &dir, &id, &mut screenshots,
+        )?;
         (
             Point {
                 x: point.0,
@@ -1322,7 +1340,9 @@ fn run_visual_reply_inner(
                     "请严格遵守每一条规则，重写一条不换行、使用原帖主要语言的回复。上一版未通过校验：{error:#}。只返回回复正文，不要解释或加引号。\n帖子正文：{post_text}\n回复规则：{}",
                     options.reply_rules.trim()
                 );
-                generate_reply_or_close_composer(&options, &prompt, &post_text, cancel)?
+                generate_reply_or_close_composer(
+            &options, &prompt, &post_text, cancel, &dir, &id, &mut screenshots,
+        )?
             }
         };
         (input_point, reply_text)
