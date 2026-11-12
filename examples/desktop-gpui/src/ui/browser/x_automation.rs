@@ -116,6 +116,9 @@ fn run_reply_round(
     cancel: &AtomicBool,
 ) -> anyhow::Result<bool> {
     check_cancel(cancel)?;
+    // The active Chrome tab can change while automation is running.
+    // Revalidate the target page before every timeline read.
+    ensure_x_home(client)?;
     let response = client.execute(BrowserCommand::GetXPosts { limit: Some(50) })?;
     if !response.ok {
         let message = response.error.unwrap_or_else(|| "读取 X 时间线失败".to_string());
@@ -181,14 +184,28 @@ fn run_reply_round(
             &post_text,
         )?;
         x_assistant::save_reply_text_blocking(&run_id, &reply_text)?;
+
+        // Re-check the active tab after AI generation; never send to a page
+        // the user switched to while the model was generating the reply.
+        if let Err(error) = ensure_x_home(client) {
+            let reason = format!("提交前页面校验失败，未发送回复：{error:#}");
+            x_assistant::mark_reply_failed_blocking(&run_id, &reason)?;
+            return Err(error);
+        }
+        check_cancel(cancel)?;
         x_assistant::mark_reply_submitting_blocking(&run_id)?;
 
-        let response = client
-            .execute(BrowserCommand::ReplyToXPost {
-                post_id: post_id.clone(),
-                text: reply_text,
-            })
-            .context("浏览器助手提交 X 回复失败")?;
+        let response = match client.execute(BrowserCommand::ReplyToXPost {
+            post_id: post_id.clone(),
+            text: reply_text,
+        }) {
+            Ok(response) => response,
+            Err(error) => {
+                let reason = format!("提交请求期间连接异常，发送结果无法确认：{error:#}");
+                x_assistant::mark_reply_uncertain_blocking(&run_id, &reason)?;
+                bail!("SEND_UNCERTAIN: {reason}");
+            }
+        };
 
         if !response.ok {
             let reason = response.error.unwrap_or_else(|| "浏览器插件回复命令失败".into());
@@ -199,7 +216,11 @@ fn run_reply_round(
         let result = response.result.unwrap_or(Value::Null);
         match result.get("status").and_then(Value::as_str) {
             Some("sent") if result.get("confirmed").and_then(Value::as_bool) == Some(true) => {
-                x_assistant::mark_last_step_completed_blocking(&run_id)?;
+                if let Err(error) = x_assistant::mark_last_step_completed_blocking(&run_id) {
+                    let reason = format!("X 已确认发送，但保存成功状态失败：{error:#}");
+                    let _ = x_assistant::mark_reply_uncertain_blocking(&run_id, &reason);
+                    bail!("SEND_UNCERTAIN: {reason}");
+                }
                 app_log::x_info!("浏览器助手：[回复] post_id={} 已确认发送", post_id);
                 return Ok(true);
             }
@@ -274,7 +295,7 @@ fn should_post(posts_per_hour: u8) -> anyhow::Result<bool> {
 }
 
 fn ensure_daily_limit(limit: u16) -> anyhow::Result<()> {
-    let sent = x_assistant::today_sent_reply_count_blocking()?;
+    let sent = x_assistant::today_sent_reply_count_by_method_blocking("browser")?;
     let limit = u64::from(limit.clamp(100, 2_000));
     anyhow::ensure!(
         sent < limit,
@@ -287,7 +308,9 @@ fn wait_reply_capacity(cancel: &AtomicBool, limit: u8) -> anyhow::Result<()> {
     let limit = limit.clamp(1, 60);
     loop {
         check_cancel(cancel)?;
-        if let Some(seconds) = x_assistant::reply_capacity_wait_seconds_blocking(limit)? {
+        if let Some(seconds) =
+            x_assistant::reply_capacity_wait_seconds_by_method_blocking("browser", limit)?
+        {
             std::thread::sleep(Duration::from_secs(seconds.min(1).max(1)));
         } else {
             return Ok(());
