@@ -160,10 +160,18 @@ impl AutoReplyRunner {
             self.failures += 1;
         }
 
+        let continue_current_batch = result.summary.contains("继续处理当前批次");
         self.last_result = Some(result);
 
-        // 正常轮次只滚动，不刷新页面。
-        self.scroll_or_recover(cancel, "本轮处理结束，向下查找下一条帖子")
+        if continue_current_batch {
+            automation::log_browser_event(
+                "本批尚有回复额度，保持当前时间线位置，立即继续筛选本批剩余帖子。",
+            );
+            return Ok(());
+        }
+
+        // 本批已达到回复上限或本批帖子已扫描完毕，才滚动加载下一批。
+        self.scroll_or_recover(cancel, "当前批次处理结束，向下滚动并重新解析下一批帖子")
     }
 
     /// 滚动失败属于普通恢复错误：再尝试一次分类恢复，成功后回到主循环。
