@@ -25,7 +25,13 @@ fn generate_reply_or_close_composer(
     post_id: &impl std::fmt::Display,
     screenshots: &mut Vec<PathBuf>,
 ) -> anyhow::Result<String> {
-    match reply_filter::generate_compliant_reply(options, prompt, source_post, cancel) {
+    match reply_filter::generate_compliant_reply(
+        options,
+        prompt,
+        source_post,
+        cancel,
+        automation::LogMode::Screenshot,
+    ) {
         Ok(reply) => Ok(reply),
         Err(error) if error.downcast_ref::<reply_filter::ReplyQualityRejected>().is_some() => {
             automation::log_screenshot_event(
