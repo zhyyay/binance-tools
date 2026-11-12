@@ -1067,21 +1067,24 @@ impl XAssistantPage {
             .w(px(112.))
             .gap_1()
             .child(
-                Button::new("x-assistant-status-tab")
-                    .ghost()
-                    .small()
-                    .label("运行状态")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                // 每次打开运行状态页都重新读取当天（北京时间）的日志，
-                // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
-                this.log_tail = Some(run_log::LogTail::new());
-                this.show_run_status = true;
-                this.show_reply_list = false;
-                this.show_post_history = false;
-                this.show_task_settings = false;
-                this.show_auto_post = false;
-                cx.notify();
-            })),
+                div()
+                    .id("x-assistant-status-tab")
+                    .cursor_pointer()
+                    .px_2()
+                    .py_1()
+                    .text_size(px(12.))
+                    .child("运行状态")
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        // 每次打开运行状态页都重新读取当天（北京时间）的日志，
+                        // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
+                        this.log_tail = Some(run_log::LogTail::new());
+                        this.show_run_status = true;
+                        this.show_reply_list = false;
+                        this.show_post_history = false;
+                        this.show_task_settings = false;
+                        this.show_auto_post = false;
+                        cx.notify();
+                    })),
             )
             .child(
                 div()
