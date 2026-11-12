@@ -1,6 +1,6 @@
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, bail};
@@ -49,12 +49,23 @@ pub fn run(
     let mut reply_count = 0u64;
     let mut post_count = 0u64;
     let mut rounds_since_post = 0usize;
+    let mut last_reply_at: Option<Instant> = None;
+
+    app_log::x_info!(
+        "浏览器助手：[自动回复] 本轮设置：每日上限={} 条，每分钟上限={} 条，自动回复={}，自动发帖={}，自动发送={}；每条成功回复至少间隔 30 秒",
+        settings.daily_reply_limit,
+        settings.per_minute_reply_limit,
+        settings.auto_reply_enabled,
+        settings.auto_post_enabled,
+        settings.auto_send
+    );
 
     loop {
         check_cancel(cancel)?;
 
         if settings.auto_reply_enabled {
             ensure_daily_limit(settings.daily_reply_limit)?;
+            wait_min_reply_interval(cancel, last_reply_at)?;
             wait_reply_capacity(cancel, settings.per_minute_reply_limit)?;
             let result = match run_reply_round(&mut client, &reply_options, cancel) {
                 Ok(value) => value,
@@ -64,6 +75,7 @@ pub fn run(
             if result {
                 reply_count += 1;
                 rounds_since_post += 1;
+                last_reply_at = Some(Instant::now());
             } else {
                 rounds_since_post += 1;
                 match scroll_timeline(&mut client, cancel) {
@@ -468,6 +480,27 @@ fn ensure_daily_limit(limit: u16) -> anyhow::Result<()> {
         "GLOBAL_STOP: 浏览器自动回复已达到每日上限 {limit} 条，自动回复和自动发帖均已停止"
     );
     Ok(())
+}
+
+/// Keep a human-paced minimum gap between successful replies, even when the
+/// configured per-minute ceiling is higher. Wait in short slices so Stop is responsive.
+fn wait_min_reply_interval(
+    cancel: &AtomicBool,
+    last_reply_at: Option<Instant>,
+) -> anyhow::Result<()> {
+    const MIN_REPLY_INTERVAL: Duration = Duration::from_secs(30);
+    let Some(last_reply_at) = last_reply_at else {
+        return Ok(());
+    };
+    loop {
+        check_cancel(cancel)?;
+        let elapsed = last_reply_at.elapsed();
+        if elapsed >= MIN_REPLY_INTERVAL {
+            return Ok(());
+        }
+        let remaining = MIN_REPLY_INTERVAL - elapsed;
+        std::thread::sleep(remaining.min(Duration::from_millis(250)));
+    }
 }
 
 fn wait_reply_capacity(cancel: &AtomicBool, limit: u8) -> anyhow::Result<()> {
