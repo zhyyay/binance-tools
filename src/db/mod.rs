@@ -421,12 +421,6 @@ fn run_migrations(connection: &Connection) -> anyhow::Result<()> {
             CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_created_at
                 ON x_assistant_reply_records(created_at DESC);
 
-            CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_post_id
-                ON x_assistant_reply_records(post_id);
-
-            CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_method
-                ON x_assistant_reply_records(reply_method);
-
             CREATE TABLE IF NOT EXISTS crypto_news (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source TEXT NOT NULL,
@@ -524,6 +518,19 @@ fn run_migrations(connection: &Connection) -> anyhow::Result<()> {
     )?;
     add_column_if_missing(connection, "x_assistant_reply_records", "send_attempted_at", "TEXT")?;
     add_column_if_missing(connection, "x_assistant_reply_records", "send_error", "TEXT")?;
+
+    // 先补齐旧数据库缺少的字段，再创建依赖这些字段的索引。
+    // 否则旧库和新库都会在 run_migrations 阶段因 no such column 中断，
+    // 导致发帖历史、回复历史等页面都无法打开。
+    connection.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_post_id
+            ON x_assistant_reply_records(post_id);
+
+        CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_method
+            ON x_assistant_reply_records(reply_method);
+        "#,
+    )?;
 
     // 老数据库的表结构不会因 CREATE TABLE IF NOT EXISTS 自动更新 DEFAULT。
     // 旧默认值可能仍是 UTC；如果创建时间与后续显式写入的北京时间相差约 8 小时，
