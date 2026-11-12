@@ -86,12 +86,12 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
                 (center_x + crop.left as f32).round() as i32,
                 (center_y + crop.top as f32).round() as i32,
             );
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[OCR][发帖输入框] 识别成功（模式：{mode_name}），匹配度 {:.0}%，坐标=({}, {})",
                 score * 100.0, point.0, point.1
             ));
             if attempt > 0 {
-                super::automation::log_event(&format!(
+                super::automation::log_screenshot_event(&format!(
                     "[自动发帖 OCR] 首选模式未命中，备用模式‘{mode_name}’识别成功"
                 ));
             }
@@ -99,7 +99,7 @@ pub(super) fn locate_post_composer_input(path: &Path) -> anyhow::Result<Option<(
         }
     }
 
-    super::automation::log_event(
+    super::automation::log_screenshot_event(
         "[自动发帖 OCR] compose 弹窗局部 OCR 未匹配到明确的发帖占位文字，停止操作",
     );
     Ok(None)
@@ -135,7 +135,7 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
                 && center_x <= crop.width as f32 * 0.98
                 && center_y >= crop.height as f32 * 0.35
                 && center_y <= crop.height as f32 * 0.98;
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[OCR][发帖按钮] 候选检查：模式={mode_name}，文字匹配={label_match}，区域匹配={in_button_zone}"
             ));
             (label_match && in_button_zone).then_some((center_x, center_y, line.text.as_str()))
@@ -146,12 +146,12 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
                 (center_x + crop.left as f32).round() as i32,
                 (center_y + crop.top as f32).round() as i32,
             );
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[OCR][发帖按钮] 识别成功（模式：{mode_name}），坐标=({}, {})",
                 point.0, point.1
             ));
             if attempt > 0 {
-                super::automation::log_event(&format!(
+                super::automation::log_screenshot_event(&format!(
                     "[自动发帖 OCR] 首选模式未命中，备用模式‘{mode_name}’识别成功"
                 ));
             }
@@ -159,7 +159,7 @@ pub(super) fn locate_post_submit_button(path: &Path) -> anyhow::Result<Option<(i
         }
     }
 
-    super::automation::log_event(
+    super::automation::log_screenshot_event(
         "[自动发帖 OCR] compose 弹窗右下区域未识别到可信的发帖按钮；未点击，禁止猜测坐标",
     );
     Ok(None)
@@ -192,7 +192,7 @@ pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow
         )?;
         let recognized = normalize_text(&doc.text).to_lowercase();
         let score = text_match_ratio(&recognized, &expected);
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "[OCR][发帖正文] 核验{}（模式：{mode_name}），匹配度 {:.0}%，要求至少 80%",
             if score >= 0.80 { "成功" } else { "未通过" },
             score * 100.0
@@ -205,7 +205,7 @@ pub(super) fn verify_post_composer_content(path: &Path, content: &str) -> anyhow
         }
     }
 
-    super::automation::log_event(&format!(
+    super::automation::log_screenshot_event(&format!(
         "[OCR][发帖正文] 识别失败，最高匹配度 {:.0}%",
         best_score * 100.0
     ));
@@ -238,14 +238,14 @@ pub(super) fn recognize_post_sent_toast(path: &Path) -> anyhow::Result<bool> {
     for (scale_num, scale_den, threshold, mode) in modes {
         let doc = recognize_document_image(&crop, scale_num, scale_den, threshold)?;
         if contains_sent_confirmation(doc.text.trim()) {
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[OCR][发送提示] 识别成功：检测到 X 发送成功提示（模式：{mode}）。"
             ));
             return Ok(true);
         }
     }
 
-    super::automation::log_event("[OCR][发送提示] 识别失败：底部区域未检测到发送成功提示。");
+    super::automation::log_screenshot_event("[OCR][发送提示] 识别失败：底部区域未检测到发送成功提示。");
     Ok(false)
 }
 
@@ -295,7 +295,7 @@ pub(super) fn recognize_current_url(path: &Path) -> anyhow::Result<Option<String
                 .collect::<Vec<_>>()
                 .join(" | ");
 
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[OCR-地址栏] 第{}次识别，区域={}%-{}%，结果={}",
                 index + 1,
                 top_pct,
@@ -316,13 +316,13 @@ pub(super) fn recognize_current_url(path: &Path) -> anyhow::Result<Option<String
                     || normalized.starts_with("x.com/");
 
                 if valid {
-                    super::automation::log_event(&format!("[OCR-地址栏] 通用识别成功：{}", url));
+                    super::automation::log_screenshot_event(&format!("[OCR-地址栏] 通用识别成功：{}", url));
                     return Ok(Some(url));
                 }
             }
         }
 
-        super::automation::log_event("[OCR-地址栏] 所有通用裁剪区域均未识别到 X 地址");
+        super::automation::log_screenshot_event("[OCR-地址栏] 所有通用裁剪区域均未识别到 X 地址");
 
         Ok(None)
     })
@@ -421,7 +421,7 @@ fn crop_compose_dialog(path: &Path) -> anyhow::Result<ComposeDialogCrop> {
         crop_width, crop_height, width, height
     );
     let crop_image = crop_imm(&source, left, top, crop_width, crop_height).to_image();
-    super::automation::log_event(&format!(
+    super::automation::log_screenshot_event(&format!(
         "[弹窗边界] 动态检测成功：背景亮度={}，分割阈值={}，边界=({},{})-({},{}), 尺寸={}x{}",
         background, threshold, left, top, right, bottom, crop_width, crop_height
     ));
@@ -559,7 +559,7 @@ pub(super) fn identify_post_and_action_bar_at(
             "当前地址不是 x.com/home，可能已有回复/发帖弹窗遮挡时间线；停止帖子解析"
         );
 
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "阶段 1/3：截图后当前地址与时间线 PP-OCR JSON：{}",
             serde_json::to_string(&serde_json::json!({
                 "current_url": page_json["current_url"],
@@ -567,14 +567,14 @@ pub(super) fn identify_post_and_action_bar_at(
             }))?
         ));
 
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "OCR诊断：文本框数量={}，解析帖子数量={}",
             result.text_blocks.len(),
             parsed.timeline.posts.len()
         ));
 
         for (index, candidate) in parsed.timeline.posts.iter().enumerate() {
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "OCR诊断：候选#{} 作者={:?} 账号={:?} 时间={:?} 正文长度={} 评论={:?} 浏览量={:?}",
                 index + 1,
                 candidate.author_name,
@@ -715,7 +715,7 @@ pub(super) fn identify_post_and_action_bar_at(
                 recognized_line,
                 confidence
             );
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[账号二次核验] 首轮=@{}，复核=@{}，首轮置信度={:.2}，复核置信度={:.2}，通过。",
                 account_token, verified_handle, header_confidence, confidence
             ));
@@ -754,7 +754,7 @@ pub(super) fn identify_post_and_action_bar_at(
             })
             .unwrap_or(source.height());
 
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "[帖子边界] 当前作者栏 x={} y={}，下一条顶层帖子 y={}，截图高度={}，横向容差={}",
             header_left,
             header_y,
@@ -810,12 +810,12 @@ pub(super) fn identify_post_and_action_bar_at(
             let reply_point = (reply.x as i32, reply.y as i32);
             let like_point = like.map(|point| (point.x as i32, point.y as i32));
 
-            super::automation::log_event("[互动栏恢复] 整页 OCR 坐标有效，跳过局部 OCR");
+            super::automation::log_screenshot_event("[互动栏恢复] 整页 OCR 坐标有效，跳过局部 OCR");
 
             (reply_point, repost_point, like_point, reply.y as i32)
         } else {
             // 异常情况：整页 OCR 没有得到有效回复坐标。
-            super::automation::log_event("[互动栏恢复] 整页回复坐标缺失或越界，启动局部 OCR");
+            super::automation::log_screenshot_event("[互动栏恢复] 整页回复坐标缺失或越界，启动局部 OCR");
 
             // 1. 裁剪目标帖子区域。
             let crop = super::crop::crop_post_action_region(&source, header_y, next_header_y)?;
@@ -830,7 +830,7 @@ pub(super) fn identify_post_and_action_bar_at(
 
             crop.image.save(&crop_debug_path)?;
 
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[互动栏恢复] 目标账号={} 发布时间={} 原图={}x{} header_y={} next_header_y={} crop_top={} crop_height={} crop_width={} 裁剪图片={}",
                 account_handle,
                 posted_at,
@@ -862,7 +862,7 @@ pub(super) fn identify_post_and_action_bar_at(
                     && candidate.action_coordinates.reply.is_some()
             });
             if !first_pass_has_reply {
-                super::automation::log_event(
+                super::automation::log_screenshot_event(
                     "[互动栏恢复] 首轮局部 OCR 未取得目标回复坐标，启动 2 倍放大复核。",
                 );
                 let enlarged = image::imageops::resize(
@@ -884,17 +884,17 @@ pub(super) fn identify_post_and_action_bar_at(
                 if retry_has_reply {
                     crop_parsed = retry_parsed;
                     coordinate_scale = 2;
-                    super::automation::log_event(
+                    super::automation::log_screenshot_event(
                         "[互动栏恢复] 2 倍放大复核成功，使用复核坐标。",
                     );
                 } else {
-                    super::automation::log_event(
+                    super::automation::log_screenshot_event(
                         "[互动栏恢复] 2 倍放大复核仍未找到目标回复坐标。",
                     );
                 }
             }
 
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[互动栏恢复] 局部 OCR（含必要时放大复核）耗时：{} ms",
                 crop_start.elapsed().as_millis()
             ));
@@ -917,7 +917,7 @@ pub(super) fn identify_post_and_action_bar_at(
                     anyhow::anyhow!("局部 OCR 未能匹配目标帖子 @{}，禁止恢复坐标", account_token)
                 })?;
 
-            super::automation::log_event("[互动栏恢复] 目标账号和发布时间核验通过");
+            super::automation::log_screenshot_event("[互动栏恢复] 目标账号和发布时间核验通过");
 
             let local_reply = recovered_post
                 .action_coordinates
@@ -980,7 +980,7 @@ pub(super) fn identify_post_and_action_bar_at(
                 }
             }
 
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[互动栏恢复] 局部坐标还原成功：回复={:?} 转发={:?} 点赞={:?}",
                 reply_point, repost_point, like_point,
             ));
@@ -1000,7 +1000,7 @@ pub(super) fn identify_post_and_action_bar_at(
 
         let post_bottom_y = action_y;
 
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "[互动栏坐标复用] 作者={}，账号={}，回复={:?}，转发={:?}，点赞={:?}",
             author_name, account_handle, reply_point, repost_point, like_point,
         ));
@@ -1020,7 +1020,7 @@ pub(super) fn identify_post_and_action_bar_at(
             like_point,
         )?;
 
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "阶段 1/3：全页 PP-OCR 互动栏候选坐标：回复={reply_point:?}，转发={repost_point:?}，点赞={like_point:?}；已生成标注截图 {}。",
             annotated_path.display()
         ));
@@ -1279,7 +1279,7 @@ pub(super) fn verify_reply_tooltip(
             .map(|(text, x, y)| format!("{text}@({x:.0},{y:.0})"))
             .collect::<Vec<_>>()
             .join(" | ");
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "悬停回复图标 PP-OCR 校验（{mode}）：目标=({target_x},{target_y})，识别到‘回复’提示={verified}；附近文字：{nearby_text}；裁剪图={}。",
             crop_path.display()
         ));
@@ -1337,7 +1337,7 @@ pub(super) fn locate_reply_input(
             })
             .collect::<Vec<_>>()
             .join(" | ");
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "阶段 2/3：回复弹窗局部 OCR（{mode_name}）共 {} 行。全文：\n{}\n弹窗识别行及屏幕坐标：{}",
             doc.lines.len(),
             doc.text,
@@ -1368,7 +1368,7 @@ pub(super) fn locate_reply_input(
 
         if let Some((line, center_x, center_y, score)) = best {
             if attempt > 0 {
-                super::automation::log_event(&format!(
+                super::automation::log_screenshot_event(&format!(
                     "阶段 2/3：通过备用 PP-OCR 模式‘{mode_name}’识别到回复输入占位文字；识别行‘{}’，匹配度 {:.0}%。",
                     line.text,
                     score * 100.0
@@ -1381,7 +1381,7 @@ pub(super) fn locate_reply_input(
         }
     }
 
-    super::automation::log_event("阶段 2/3：所有 PP-OCR 预处理方案均未匹配回复输入占位文字。");
+    super::automation::log_screenshot_event("阶段 2/3：所有 PP-OCR 预处理方案均未匹配回复输入占位文字。");
     Ok(None)
 }
 
@@ -1427,12 +1427,12 @@ pub(super) fn locate_reply_close_button(path: &Path) -> anyhow::Result<Option<(i
     }
 
     let Some((x, y, score)) = best else {
-        super::automation::log_event(
+        super::automation::log_screenshot_event(
             "回复质量过滤失败：已检测到回复弹窗，但未能确认左上角关闭图标；不会猜测坐标。",
         );
         return Ok(None);
     };
-    super::automation::log_event(&format!(
+    super::automation::log_screenshot_event(&format!(
         "回复弹窗关闭图标识别成功：弹窗局部坐标=({x},{y})，双对角线匹配分数={score}。"
     ));
     Ok(Some((x as i32 + crop.left as i32, y as i32 + crop.top as i32)))
@@ -1513,15 +1513,15 @@ pub(super) fn locate_reply_submit_button(
                 (line.left + line.right) * 0.5 / doc.scale_x + crop.left as f32,
                 (line.top + line.bottom) * 0.5 / doc.scale_y + crop.top as f32))
             .take(30).collect::<Vec<_>>().join(" | ");
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "阶段 2/3：提交前 PP-OCR 未能在单行中可靠匹配回复文本‘{reply_text}’，禁止使用视觉模型猜测提交坐标。识别行：{candidates}"
         ));
         match save_reply_text_ocr_diagnostic(path, &crop, &doc, &reply_text) {
-            Ok(annotation_path) => super::automation::log_event(&format!(
+            Ok(annotation_path) => super::automation::log_screenshot_event(&format!(
                 "[OCR][回复正文诊断] 标注截图已保存：{}",
                 annotation_path.display()
             )),
-            Err(error) => super::automation::log_event(&format!(
+            Err(error) => super::automation::log_screenshot_event(&format!(
                 "[OCR][回复正文诊断] 标注截图生成失败（不影响原流程）：{error:#}"
             )),
         }
@@ -1529,7 +1529,7 @@ pub(super) fn locate_reply_submit_button(
     }
 
     if used_spatial_fallback {
-        super::automation::log_event(
+        super::automation::log_screenshot_event(
             "[OCR][回复正文] 严格匹配未命中，已通过回复目标锚点下方的空间约束完成短文本模糊匹配（阈值 70%）"
         );
     }
@@ -1597,13 +1597,13 @@ pub(super) fn locate_reply_submit_button(
             let center_y = (line.top + line.bottom) * 0.5 / doc.scale_y;
             format!("{}@({:.0},{:.0})", line.text, center_x, center_y)
         }).take(40).collect::<Vec<_>>().join(" | ");
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "[OCR][回复提交按钮诊断] 正文右边界={reply_right:.0}，按钮搜索范围 x>={min_button_x:.0} y={submit_region_top:.0}..{submit_region_bottom:.0}；相关候选：{candidates}"
         ));
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "[OCR][回复提交按钮诊断] OCR 全部识别行（最多 40 条）：{ocr_lines}"
         ));
-        super::automation::log_event(
+        super::automation::log_screenshot_event(
             "[OCR][回复提交按钮诊断] 标注颜色：蓝=回复正文，红=按钮搜索区域，黄=包含‘回复’的普通文字，橙=精确‘回复’但位置未通过，绿=位置条件通过的按钮候选。"
         );
         match save_reply_submit_ocr_diagnostic(
@@ -1615,15 +1615,15 @@ pub(super) fn locate_reply_submit_button(
             submit_region_top,
             submit_region_bottom,
         ) {
-            Ok(annotation_path) => super::automation::log_event(&format!(
+            Ok(annotation_path) => super::automation::log_screenshot_event(&format!(
                 "[OCR][回复提交按钮诊断] 标注截图已保存：{}",
                 annotation_path.display()
             )),
-            Err(error) => super::automation::log_event(&format!(
+            Err(error) => super::automation::log_screenshot_event(&format!(
                 "[OCR][回复提交按钮诊断] 标注截图生成失败（不影响原流程）：{error:#}"
             )),
         }
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "阶段 2/3：已核对回复正文，但弹窗右下方安全区域未识别到‘回复’提交按钮；未点击发送。正文范围 x={reply_right:.0} y={reply_top:.0}..{reply_bottom:.0}，按钮搜索区域 x>={min_button_x:.0} y={submit_region_top:.0}..{submit_region_bottom:.0}，候选={candidates}"
         ));
         return Ok(None);
@@ -1647,7 +1647,7 @@ pub(super) fn locate_reply_submit_button(
             && y <= submit_region_bottom,
         "OCR 提交按钮不在已核验回复正文的右侧安全区域"
     );
-    super::automation::log_event(&format!(
+    super::automation::log_screenshot_event(&format!(
         "阶段 2/3：弹窗 OCR 在已核验回复正文右侧识别到‘回复’提交按钮：文本={recognized:?}，正文右边界={reply_right:.0}，按钮局部坐标=({x:.0},{y:.0})，客户区坐标=({}, {})。",
         point.0, point.1
     ));
@@ -1709,14 +1709,14 @@ fn save_reply_text_ocr_diagnostic(
             color,
             4,
         );
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "[OCR][回复正文诊断] 最接近预期文本的识别行：{:?}，匹配度 {:.0}%，预期文本：{:?}",
             line.text,
             score * 100.0,
             expected_text
         ));
     } else {
-        super::automation::log_event(&format!(
+        super::automation::log_screenshot_event(&format!(
             "[OCR][回复正文诊断] 当前 OCR 未产生任何文本行；预期文本：{:?}",
             expected_text
         ));
@@ -1950,14 +1950,14 @@ fn with_cached_ocr_engine<T>(
             let init_start = Instant::now();
 
             let engine = OcrEngine::new_auto()?;
-            super::automation::log_event(&format!(
+            super::automation::log_screenshot_event(&format!(
                 "[OCR] {} OCR 初始化成功",
                 engine.backend_name()
             ));
 
             let init_ms = init_start.elapsed().as_millis();
 
-            super::automation::log_event(&format!("[OCR] 引擎初始化耗时：{} ms", init_ms));
+            super::automation::log_screenshot_event(&format!("[OCR] 引擎初始化耗时：{} ms", init_ms));
 
             *cached = Some(engine);
         }
@@ -1971,10 +1971,10 @@ fn with_cached_ocr_engine<T>(
 
         match &result {
             Ok(_) => {
-                super::automation::log_event(&format!("[OCR] 本次识别完成，耗时：{} ms", ocr_ms));
+                super::automation::log_screenshot_event(&format!("[OCR] 本次识别完成，耗时：{} ms", ocr_ms));
             }
             Err(err) => {
-                super::automation::log_event(&format!(
+                super::automation::log_screenshot_event(&format!(
                     "[OCR] 本次识别失败，耗时：{} ms，错误：{:#}",
                     ocr_ms, err
                 ));
