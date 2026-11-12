@@ -200,6 +200,23 @@ impl BrowserReplyRunner {
                 );
             }
 
+            let send_status = sent.get("status").and_then(Value::as_str).unwrap_or("missing");
+            let confirmed = sent.get("confirmed").and_then(Value::as_bool);
+            let confirmation_source = sent.get("confirmation_source").and_then(Value::as_str).unwrap_or("unknown");
+            let network_status = sent.get("network_confirmation")
+                .and_then(|value| value.get("status"))
+                .and_then(Value::as_str)
+                .unwrap_or("missing");
+            let network_reason = sent.get("network_confirmation")
+                .and_then(|value| value.get("reason"))
+                .and_then(Value::as_str)
+                .unwrap_or("none");
+            let created_tweet_id = sent.get("created_tweet_id").and_then(Value::as_str).unwrap_or("none");
+            automation::log_browser_event(&format!(
+                "浏览器插件发送确认结果：status={}，confirmed={:?}，source={}，network_status={}，network_reason={}，created_tweet_id={}。",
+                send_status, confirmed, confirmation_source, network_status, network_reason, created_tweet_id
+            ));
+
             match sent.get("status").and_then(Value::as_str) {
                 Some("sent") if sent.get("confirmed").and_then(Value::as_bool) == Some(true) => {
                     if let Err(error) = binance_tools::db::x_assistant::mark_last_step_completed_blocking(&run_id) {
