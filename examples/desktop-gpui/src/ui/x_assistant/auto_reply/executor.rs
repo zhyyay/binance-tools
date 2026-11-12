@@ -352,13 +352,16 @@ fn log_round_error(
 /// 该错误只针对当前帖子；即使专用错误类型在跨层传播时被 anyhow context 包装，
 /// 也通过稳定错误标记兜底识别，避免被当成自动化故障而停止整个任务。
 fn is_reply_quality_rejection(error: &anyhow::Error) -> bool {
-    // 只认真正的质量拒绝根因，不扫描整个错误链的文本。
-    // 例如“滚动失败；上一轮错误：质量过滤拒绝”不能被误判为质量拒绝，
-    // 否则主循环会把浏览器恢复失败当成可跳过帖子，反复滚动后仍可能异常退出。
-    error
-        .root_cause()
-        .downcast_ref::<super::super::reply_filter::ReplyQualityRejected>()
-        .is_some()
+    // 错误可能被 anyhow context 包装，因此遍历整条错误链。
+    // 这里使用专用错误类型；文本标记只作为兼容兜底，避免质量拒绝逃逸到联动入口。
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<super::super::reply_filter::ReplyQualityRejected>()
+            .is_some()
+            || cause
+                .to_string()
+                .contains("回复连续两次未通过质量过滤")
+    })
 }
 
 /// 将错误或摘要压成单行，避免换行破坏日志检索。
