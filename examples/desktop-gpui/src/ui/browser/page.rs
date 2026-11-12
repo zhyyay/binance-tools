@@ -466,7 +466,7 @@ impl BrowserAssistantPage {
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(13.)).font_semibold().child("连接方式"))
                 .child(div().text_size(px(12.)).child("开始任务或点击检测连接时，桌面端才连接本机 Native Host，再由 Chrome 扩展操作当前活动标签页。"))
-                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("若提示 Native Host 未安装，请运行 browser-assistant 仓库中的 scripts/install-host.ps1，并确认扩展 ID 与安装参数一致。"))
+                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("若提示 Native Host 未安装，请运行 browser-assistant 仓库中的 scripts/install-host.ps1，并确认扩展 ID 与安装参数一致。")))
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(13.)).font_semibold().child("操作安全"))
                 .child(div().text_size(px(12.)).child("只操作当前活动的 HTTP/HTTPS 标签页；不会读取 Cookie、localStorage 或 sessionStorage。"))
