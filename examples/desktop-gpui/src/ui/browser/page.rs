@@ -804,7 +804,6 @@ impl BrowserAssistantPage {
             .filter(|row| self.reply_detail_hidden_row != Some(*row))
             .and_then(|row| records.get(row))
             .cloned();
-        let has_selected_record = selected_record.is_some();
 
         v_flex()
             .size_full()
@@ -928,7 +927,7 @@ impl BrowserAssistantPage {
                                                 .child(
                                                     Button::new("browser-reply-detail-close")
                                                         .small()
-                                                        .ghost()
+                                                        .outline()
                                                         .label("收起")
                                                         .on_click(cx.listener(move |this, _, _, cx| {
                                                             this.reply_detail_hidden_row = Some(row_index);
