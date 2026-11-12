@@ -70,7 +70,7 @@ impl AutoReplyRunner {
 
             if let Err(error) = result {
                 // 最外层兜底：质量拒绝只针对当前帖子，不能从主循环向 UI 冒泡成
-                // “X 自动化异常”。即使中间某层包装/转换了 anyhow 错误，也按稳定错误文本识别。
+                // “X 自动化异常”。只按错误根因类型识别，避免把滚动恢复失败误判为质量拒绝。
                 if is_reply_quality_rejection(&error) {
                     let reason = compact_log_value(&format!("{error:#}"));
                     app_log::x_browser_info!(
