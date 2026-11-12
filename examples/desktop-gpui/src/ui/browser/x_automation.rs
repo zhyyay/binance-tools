@@ -108,8 +108,8 @@ pub fn get_timeline_json(
     let response = client.execute(BrowserCommand::GetXPosts { limit })?;
     if !response.ok {
         let message = response.error.unwrap_or_else(|| "读取 X 时间线失败".to_string());
-        if is_rate_limited(&message) {
-            bail!("RATE_LIMITED: {message}");
+        if is_global_stop_error(&message) {
+            bail!("GLOBAL_STOP: {message}");
         }
         bail!("{message}");
     }
@@ -117,6 +117,71 @@ pub fn get_timeline_json(
     response
         .result
         .context("浏览器助手没有返回解析后的 X 时间线 JSON")
+}
+
+/// Recover only the known X timeline error page. A failed read does not count as a reply round.
+fn get_timeline_json_with_recovery(
+    client: &mut BrowserClient,
+    limit: Option<usize>,
+    cancel: &AtomicBool,
+) -> anyhow::Result<Value> {
+    loop {
+        check_cancel(cancel)?;
+        match get_timeline_json(client, limit) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                let message = format!("{error:#}");
+                if is_global_stop_error(&message) {
+                    bail!("GLOBAL_STOP: {message}");
+                }
+
+                let page_text = client
+                    .execute(BrowserCommand::GetDomText { max_chars: Some(16_000) })
+                    .ok()
+                    .and_then(|response| response.result)
+                    .and_then(|value| value.get("text").and_then(Value::as_str).map(str::to_owned))
+                    .unwrap_or_default();
+
+                if !message.contains("TIMELINE_RELOAD_REQUIRED")
+                    && !is_x_timeline_error_page(&page_text)
+                {
+                    return Err(error);
+                }
+
+                app_log::x_info!(
+                    "浏览器助手：[自动回复] 检测到 X 时间线错误页面，准备刷新；恢复等待 30 秒，期间可随时停止"
+                );
+                let reload = client.execute(BrowserCommand::ReloadPage)
+                    .context("刷新 X 时间线失败")?;
+                anyhow::ensure!(
+                    reload.ok,
+                    "刷新 X 时间线失败：{}",
+                    reload.error.unwrap_or_default()
+                );
+
+                for _ in 0..30 {
+                    check_cancel(cancel)?;
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+                app_log::x_info!("浏览器助手：[自动回复] 30 秒恢复等待结束，重新读取时间线");
+            }
+        }
+    }
+}
+
+fn is_x_timeline_error_page(text: &str) -> bool {
+    let compact = text.split_whitespace().collect::<String>();
+    (compact.contains("出错了") && compact.contains("请尝试重新加载"))
+        || compact.contains("Somethingwentwrong")
+        || compact.contains("Tryreloading")
+}
+
+fn is_global_stop_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("global_stop")
+        || lower.contains("daily_post_limit_reached")
+        || lower.contains("challenge_detected")
+        || is_rate_limited(message)
 }
 
 fn ensure_x_home(client: &mut BrowserClient) -> anyhow::Result<()> {
@@ -139,7 +204,7 @@ fn run_reply_round(
 ) -> anyhow::Result<bool> {
     check_cancel(cancel)?;
     // Return the complete parsed JSON first; the reply worker only consumes its posts array.
-    let timeline_json = get_timeline_json(client, Some(50))?;
+    let timeline_json = get_timeline_json_with_recovery(client, Some(50), cancel)?;
     let posts = timeline_json
         .get("posts")
         .and_then(Value::as_array)
@@ -193,7 +258,11 @@ fn run_reply_round(
             &posted_at,
             &post_text,
         )?;
-        x_assistant::save_reply_text_blocking(&run_id, &reply_text)?;
+        if let Err(error) = x_assistant::save_reply_text_blocking(&run_id, &reply_text) {
+            let reason = format!("保存 AI 回复内容失败，未发送：{error:#}");
+            let _ = x_assistant::mark_reply_failed_blocking(&run_id, &reason);
+            return Err(error.into());
+        }
 
         // Re-check the active tab after AI generation; never send to a page
         // the user switched to while the model was generating the reply.
@@ -202,7 +271,10 @@ fn run_reply_round(
             x_assistant::mark_reply_failed_blocking(&run_id, &reason)?;
             return Err(error);
         }
-        check_cancel(cancel)?;
+        if cancel.load(Ordering::Acquire) {
+            x_assistant::mark_reply_failed_blocking(&run_id, "用户停止任务，回复尚未提交")?;
+            return Ok(false);
+        }
         x_assistant::mark_reply_submitting_blocking(&run_id)?;
 
         let response = match client.execute(BrowserCommand::ReplyToXPost {
@@ -309,7 +381,7 @@ fn ensure_daily_limit(limit: u16) -> anyhow::Result<()> {
     let limit = u64::from(limit.clamp(100, 2_000));
     anyhow::ensure!(
         sent < limit,
-        "浏览器自动回复已达到每日上限 {limit} 条，自动化停止"
+        "GLOBAL_STOP: 浏览器自动回复已达到每日上限 {limit} 条，自动回复和自动发帖均已停止"
     );
     Ok(())
 }
