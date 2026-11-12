@@ -17,7 +17,7 @@ pub fn acquire_browser() -> anyhow::Result<MutexGuard<'static, ()>> {
             Ok(guard) => {
                 let waited = started.elapsed();
                 if waited >= Duration::from_millis(250) {
-                    super::super::automation::log_event(&format!(
+                    super::super::automation::log_runtime_event(&format!(
                         "浏览器操作锁：等待 {:.2} 秒后获取成功。",
                         waited.as_secs_f64()
                     ));
@@ -29,7 +29,7 @@ pub fn acquire_browser() -> anyhow::Result<MutexGuard<'static, ()>> {
             }
             Err(TryLockError::WouldBlock) => {
                 let waited = started.elapsed();
-                super::super::automation::log_event(&format!(
+                super::super::automation::log_runtime_event(&format!(
                     "浏览器操作锁：等待 {:.2} 秒仍未释放，终止本轮，避免页面无限卡住。",
                     waited.as_secs_f64()
                 ));
