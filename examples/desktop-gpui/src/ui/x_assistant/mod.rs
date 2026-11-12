@@ -1070,10 +1070,6 @@ impl XAssistantPage {
                 div()
                     .id("x-assistant-status-tab")
                     .cursor_pointer()
-                    .px_2()
-                    .py_1()
-                    .text_size(px(12.))
-                    .child("运行状态")
                     .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                         // 每次打开运行状态页都重新读取当天（北京时间）的日志，
                         // 避免任务停止后跨日仍显示上一次打开时缓存的旧日志。
@@ -1084,7 +1080,11 @@ impl XAssistantPage {
                         this.show_task_settings = false;
                         this.show_auto_post = false;
                         cx.notify();
-                    })),
+                    }))
+                    .px_2()
+                    .py_1()
+                    .text_size(px(12.))
+                    .child("运行状态"),
             )
             .child(
                 div()
