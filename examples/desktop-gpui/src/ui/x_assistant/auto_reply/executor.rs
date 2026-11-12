@@ -54,6 +54,7 @@ impl AutoReplyRunner {
             if options.auto_send {
                 ensure_daily_reply_capacity()?;
                 wait_for_minute_reply_capacity(cancel)?;
+                wait_for_minimum_reply_interval(cancel)?;
             }
             if Self::is_cancelled(cancel) {
                 return self.stop();
@@ -329,7 +330,7 @@ fn compact_log_value(value: &str) -> String {
 /// reached, the worker waits until the oldest successful reply leaves the window.
 fn wait_for_minute_reply_capacity(cancel: &AtomicBool) -> Result<()> {
     let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
-    let limit = settings.per_minute_reply_limit.clamp(1, 60);
+    let limit = settings.per_minute_reply_limit.clamp(1, 5);
     let mut waiting_logged = false;
 
     loop {
@@ -349,6 +350,42 @@ fn wait_for_minute_reply_capacity(cancel: &AtomicBool) -> Result<()> {
             None => {
                 if waiting_logged {
                     automation::log_browser_event("每分钟回复额度已恢复，继续处理下一条帖子。");
+                }
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// Enforces at least 10 seconds between confirmed replies.
+/// The database stores completed_at with second precision, so the query uses
+/// an 11-second stored-time threshold to guarantee 10 real seconds have elapsed.
+fn wait_for_minimum_reply_interval(cancel: &AtomicBool) -> Result<()> {
+    const MIN_REPLY_INTERVAL_SECONDS: u64 = 10;
+    let mut waiting_logged = false;
+
+    loop {
+        if cancel.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
+        match binance_tools::db::x_assistant::reply_min_interval_wait_seconds_blocking(
+            MIN_REPLY_INTERVAL_SECONDS + 1,
+        )? {
+            Some(seconds) => {
+                if !waiting_logged {
+                    automation::log_browser_event(&format!(
+                        "回复间隔保护已触发：两次成功回复至少间隔 {MIN_REPLY_INTERVAL_SECONDS} 秒，等待后继续。"
+                    ));
+                    waiting_logged = true;
+                }
+                std::thread::sleep(Duration::from_millis(
+                    seconds.saturating_mul(250).clamp(250, 1000),
+                ));
+            }
+            None => {
+                if waiting_logged {
+                    automation::log_browser_event("最短回复间隔已满足，继续处理下一条帖子。");
                 }
                 return Ok(());
             }

@@ -60,6 +60,36 @@ pub fn reply_stats_blocking() -> anyhow::Result<XAssistantReplyStats> {
         .map_err(Into::into)
 }
 
+/// Returns seconds remaining until the minimum interval after the last confirmed reply.
+/// completed_at is stored at second precision; callers should add one second to
+/// their desired real-world interval to avoid allowing an early send.
+pub fn reply_min_interval_wait_seconds_blocking(
+    required_seconds: u64,
+) -> anyhow::Result<Option<u64>> {
+    let connection = super::open_default_connection()?;
+    let age: Option<i64> = connection.query_row(
+        "SELECT CAST(strftime('%s', datetime('now', '+8 hours')) AS INTEGER) -
+                CAST(strftime('%s', MAX(completed_at)) AS INTEGER)
+         FROM x_assistant_reply_records
+         WHERE send_status = 'sent'
+           AND completed_last_step = 1
+           AND completed_at IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let Some(age) = age else {
+        return Ok(None);
+    };
+    let age = age.max(0) as u64;
+    let required = required_seconds.max(1);
+    if age >= required {
+        Ok(None)
+    } else {
+        Ok(Some(required - age))
+    }
+}
+
 /// Counts confirmed replies sent during the current Beijing calendar day.
 pub fn today_sent_reply_count_blocking() -> anyhow::Result<u64> {
     let connection = super::open_default_connection()?;
