@@ -245,6 +245,18 @@ impl AutoReplyRunner {
             ));
         }
 
+        // 回复文本校验失败后，如果扩展无法确认关闭对应回复框，
+        // 页面仍处于可能被误操作的状态，禁止滚动或继续处理下一帖。
+        if error_text.contains("REPLY_COMPOSER_CLOSE_FAILED") {
+            automation::log_browser_event(&format!(
+                "全自动：回复内容校验失败且无法确认关闭回复框；未点击发送，立即安全停止：{error:#}"
+            ));
+            return Err(error).context(format!(
+                "回复框未能确认关闭，全自动已安全停止；累计完成 {} 条回复",
+                self.completed
+            ));
+        }
+
         self.failures += 1;
 
         self.recover(&error, cancel)?;
