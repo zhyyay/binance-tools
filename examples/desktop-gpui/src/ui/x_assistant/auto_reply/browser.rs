@@ -96,6 +96,7 @@ impl BrowserReplyRunner {
                 &prompt,
                 &post_text,
                 cancel,
+                automation::LogMode::Browser,
             )?;
             check_cancel(cancel)?;
 
