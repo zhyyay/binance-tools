@@ -54,6 +54,7 @@ pub(crate) fn send_openai_text_cancellable(
             prompt,
             request_timeout,
             cancel,
+            log_mode,
             false,
         );
     }
@@ -65,6 +66,7 @@ pub(crate) fn send_openai_text_cancellable(
         prompt,
         request_timeout,
         cancel,
+        log_mode,
         true,
     ) {
         Ok(content) => Ok(content),
@@ -97,6 +99,7 @@ fn send_text_request(
     prompt: &str,
     request_timeout: Duration,
     cancel: &AtomicBool,
+    log_mode: super::automation::LogMode,
     think: bool,
 ) -> anyhow::Result<String> {
     if cancel.load(Ordering::Acquire) {
