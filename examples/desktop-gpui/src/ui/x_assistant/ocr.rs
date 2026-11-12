@@ -1200,11 +1200,6 @@ pub(super) fn locate_discard_draft_button(path: &Path) -> anyhow::Result<Option<
     Ok(None)
 }
 
-pub(super) fn recognize_reload_confirmation(path: &Path) -> anyhow::Result<bool> {
-    let doc = recognize_document(path)?;
-    Ok(contains_reload_confirmation(&doc.text))
-}
-
 pub(super) fn verify_reply_tooltip(
     path: &Path,
     target_x: i32,
@@ -1994,12 +1989,6 @@ pub(super) fn contains_rate_limit(text: &str) -> bool {
     .any(|phrase| normalized.contains(&normalize_text(phrase).to_lowercase()))
 }
 
-fn contains_reload_confirmation(text: &str) -> bool {
-    let normalized = normalize_text(text);
-    normalized.contains(&normalize_text("重新加载此网站"))
-        && normalized.contains(&normalize_text("系统可能不会保存你所做的更改"))
-}
-
 pub(super) fn contains_retryable_send_error(text: &str) -> bool {
     let normalized = normalize_text(text).to_lowercase();
 
@@ -2115,15 +2104,10 @@ fn text_match_ratio(recognized: &str, expected: &str) -> f32 {
     matched as f32 / expected_chars.len() as f32
 }
 
-fn is_dark_pixel(image: &image::RgbImage, x: usize, y: usize) -> bool {
-    let [red, green, blue] = image.get_pixel(x as u32, y as u32).0;
-    red < 55 && green < 60 && blue < 65
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_already_sent_confirmation, contains_rate_limit, contains_reload_confirmation,
+        contains_already_sent_confirmation, contains_rate_limit,
         contains_retryable_send_error, contains_sent_confirmation, extract_x_url,
         identify_post_and_action_bar, is_x_compose_post_address, is_x_home_address,
         locate_discard_draft_button, reply_tooltip_matches_target, text_match_ratio,
@@ -2217,14 +2201,6 @@ mod tests {
             "回复", 668.0, 978.0, 672, 691
         ));
         assert!(!reply_tooltip_matches_target("0 5", 676.0, 749.0, 672, 691));
-    }
-
-    #[test]
-    fn recognizes_browser_reload_confirmation_without_matching_unrelated_text() {
-        assert!(contains_reload_confirmation(
-            "重新加载此网站？系统可能不会保存你所做的更改。"
-        ));
-        assert!(!contains_reload_confirmation("重新加载页面"));
     }
 
     #[test]
