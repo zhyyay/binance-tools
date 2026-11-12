@@ -38,14 +38,14 @@ impl AutoReplyRunner {
         cancel: &AtomicBool,
         mut post_scheduler: Option<(SyncSender<()>, Receiver<bool>)>,
     ) -> Result<VisionReplyResult> {
-        automation::log_event("自动回复循环启动");
+        automation::log_browser_event("自动回复循环启动");
         let mut first_reply_completed = false;
         let mut rounds_since_post = 0usize;
         let mut post_scheduler_active = post_scheduler.is_some();
 
         loop {
             if Self::is_cancelled(cancel) {
-                automation::log_event("自动回复收到停止信号，退出循环");
+                automation::log_browser_event("自动回复收到停止信号，退出循环");
                 return self.stop();
             }
 
@@ -72,7 +72,7 @@ impl AutoReplyRunner {
                     ensure_daily_reply_capacity()?;
                 }
                 first_reply_completed = true;
-                automation::log_event(if options.auto_send {
+                automation::log_browser_event(if options.auto_send {
                     "自动回复首条成功，已启用 10:1 自动发帖调度"
                 } else {
                     "自动回复处于仅生成/输入模式，首轮完成后已启用 10:1 自动发帖调度"
@@ -91,7 +91,7 @@ impl AutoReplyRunner {
             if post_scheduler_active {
                 rounds_since_post += 1;
                 if first_reply_completed && rounds_since_post >= REPLY_ROUNDS_PER_POST {
-                    automation::log_event(&format!(
+                    automation::log_browser_event(&format!(
                         "自动回复已完成 {REPLY_ROUNDS_PER_POST} 轮，交出浏览器操作权，等待自动发帖完成 1 次调度。"
                     ));
 
@@ -117,9 +117,9 @@ impl AutoReplyRunner {
                     rounds_since_post = 0;
                     post_scheduler_active = scheduler_available;
                     if post_scheduler_active {
-                        automation::log_event("自动发帖调度结束，浏览器操作权已交还自动回复。");
+                        automation::log_browser_event("自动发帖调度结束，浏览器操作权已交还自动回复。");
                     } else {
-                        automation::log_event(
+                        automation::log_browser_event(
                             "自动发帖调度已退出或不可用，自动回复将继续独立运行。",
                         );
                     }
@@ -189,7 +189,7 @@ impl AutoReplyRunner {
             Ok(()) => Ok(()),
             Err(error) if Self::is_cancelled(cancel) => Err(error),
             Err(error) => {
-                automation::log_event(&format!(
+                automation::log_browser_event(&format!(
                     "全自动：滚动下一帖失败，尝试分类恢复后继续：{error:#}"
                 ));
                 self.recover(&error, cancel)
@@ -204,7 +204,7 @@ impl AutoReplyRunner {
     /// 普通错误恢复后继续主循环，不设置连续失败上限。
     fn handle_error(&mut self, error: anyhow::Error, cancel: &AtomicBool) -> Result<()> {
         if Self::is_cancelled(cancel) {
-            automation::log_event(&format!("自动回复已停止：{error:#}"));
+            automation::log_browser_event(&format!("自动回复已停止：{error:#}"));
             return Ok(());
         }
 
@@ -229,7 +229,7 @@ impl AutoReplyRunner {
 
         // 点击提交后状态不明时不能滚动到下一帖；停止整个自动回复，等待人工核验。
         if error.downcast_ref::<vision::SendOutcomeUncertain>().is_some() {
-            automation::log_event(&format!(
+            automation::log_browser_event(&format!(
                 "全自动：发送结果或数据库状态无法确认，立即停止，不再处理下一条：{error:#}"
             ));
             return Err(error).context(format!(
@@ -241,7 +241,7 @@ impl AutoReplyRunner {
         self.failures += 1;
 
         self.recover(&error, cancel)?;
-        automation::log_event("全自动：当前轮次恢复完成，继续主循环处理下一条帖子。");
+        automation::log_browser_event("全自动：当前轮次恢复完成，继续主循环处理下一条帖子。");
         Ok(())
     }
 
@@ -277,19 +277,19 @@ fn log_round_result(round: usize, result: &VisionReplyResult, elapsed: std::time
     let reason = compact_log_value(&result.summary);
 
     if result.completed {
-        app_log::x_info!(
+        app_log::x_browser_info!(
             "[X助手][第{round}轮] 回复成功 | 耗时={duration}"
         );
     } else if result.summary.starts_with("提交结果未知") {
-        app_log::x_warn!(
+        app_log::x_browser_warn!(
             "[X助手][第{round}轮] 发送状态不确定 | 原因={reason} | 耗时={duration}"
         );
     } else if result.skipped_duplicate || result.summary.starts_with("继续扫描下一帖") {
-        app_log::x_info!(
+        app_log::x_browser_info!(
             "[X助手][第{round}轮] 跳过 | 原因={reason} | 耗时={duration}"
         );
     } else {
-        app_log::x_error!(
+        app_log::x_browser_error!(
             "[X助手][第{round}轮] 回复失败 | 原因={reason} | 耗时={duration}"
         );
     }
@@ -306,15 +306,15 @@ fn log_round_error(
     let duration = format!("{:.1}s", elapsed.as_secs_f64());
 
     if cancel.load(Ordering::Acquire) {
-        app_log::x_info!(
+        app_log::x_browser_info!(
             "[X助手][第{round}轮] 已停止 | 原因={reason} | 耗时={duration}"
         );
     } else if error.downcast_ref::<vision::SendOutcomeUncertain>().is_some() {
-        app_log::x_warn!(
+        app_log::x_browser_warn!(
             "[X助手][第{round}轮] 发送状态不确定 | 原因={reason} | 耗时={duration}"
         );
     } else {
-        app_log::x_error!(
+        app_log::x_browser_error!(
             "[X助手][第{round}轮] 回复失败 | 原因={reason} | 耗时={duration}"
         );
     }
@@ -339,7 +339,7 @@ fn wait_for_minute_reply_capacity(cancel: &AtomicBool) -> Result<()> {
         match binance_tools::db::x_assistant::reply_capacity_wait_seconds_blocking(limit)? {
             Some(seconds) => {
                 if !waiting_logged {
-                    automation::log_event(&format!(
+                    automation::log_browser_event(&format!(
                         "已达到每分钟最大回复数量 {limit} 条，等待发送窗口释放后继续。"
                     ));
                     waiting_logged = true;
@@ -348,7 +348,7 @@ fn wait_for_minute_reply_capacity(cancel: &AtomicBool) -> Result<()> {
             }
             None => {
                 if waiting_logged {
-                    automation::log_event("每分钟回复额度已恢复，继续处理下一条帖子。");
+                    automation::log_browser_event("每分钟回复额度已恢复，继续处理下一条帖子。");
                 }
                 return Ok(());
             }
@@ -364,7 +364,7 @@ fn ensure_daily_reply_capacity() -> Result<()> {
         let message = format!(
             "今日已成功回复 {completed}/{limit} 条，达到每日上限；自动化已停止。请到「任务设置」手动调高每日最大回复数后再启动。"
         );
-        automation::log_event(&message);
+        automation::log_browser_event(&message);
         anyhow::bail!(message);
     }
     Ok(())
