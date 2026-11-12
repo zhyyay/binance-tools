@@ -14,6 +14,8 @@ pub struct XAssistantReplyStats {
 #[derive(Clone, Debug)]
 pub struct XAssistantReplyRecord {
     pub run_id: String,
+    pub post_id: Option<String>,
+    pub reply_method: String,
     pub author_name: String,
     pub account_handle: String,
     pub posted_at_text: String,
@@ -117,7 +119,7 @@ pub fn delete_reply_records_older_than_three_days_blocking() -> anyhow::Result<u
 pub fn list_reply_records_blocking() -> anyhow::Result<Vec<XAssistantReplyRecord>> {
     let connection = super::open_default_connection()?;
     let mut statement = connection.prepare(
-        "SELECT run_id, author_name, account_handle, posted_at_text, post_text,
+        "SELECT run_id, post_id, reply_method, author_name, account_handle, posted_at_text, post_text,
                 reply_text, completed_last_step, created_at, send_status
          FROM x_assistant_reply_records
          ORDER BY id DESC",
@@ -125,14 +127,16 @@ pub fn list_reply_records_blocking() -> anyhow::Result<Vec<XAssistantReplyRecord
     let rows = statement.query_map([], |row| {
         Ok(XAssistantReplyRecord {
             run_id: row.get(0)?,
-            author_name: row.get(1)?,
-            account_handle: row.get(2)?,
-            posted_at_text: row.get(3)?,
-            post_text: row.get(4)?,
-            reply_text: row.get(5)?,
-            completed_last_step: row.get(6)?,
-            created_at: row.get(7)?,
-            send_status: row.get(8)?,
+            post_id: row.get(1)?,
+            reply_method: row.get(2)?,
+            author_name: row.get(3)?,
+            account_handle: row.get(4)?,
+            posted_at_text: row.get(5)?,
+            post_text: row.get(6)?,
+            reply_text: row.get(7)?,
+            completed_last_step: row.get(8)?,
+            created_at: row.get(9)?,
+            send_status: row.get(10)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -153,10 +157,32 @@ pub fn insert_reply_record_blocking(
     posted_at_text: &str,
     post_text: &str,
 ) -> anyhow::Result<()> {
+    insert_reply_record_with_metadata_blocking(
+        run_id,
+        None,
+        "screenshot",
+        author_name,
+        account_handle,
+        posted_at_text,
+        post_text,
+    )
+}
+
+pub fn insert_reply_record_with_metadata_blocking(
+    run_id: &str,
+    post_id: Option<&str>,
+    reply_method: &str,
+    author_name: &str,
+    account_handle: &str,
+    posted_at_text: &str,
+    post_text: &str,
+) -> anyhow::Result<()> {
     let connection = super::open_default_connection()?;
     insert_reply_record(
         &connection,
         run_id,
+        post_id,
+        reply_method,
         author_name,
         account_handle,
         posted_at_text,
@@ -269,6 +295,8 @@ fn replied_to_account_within_day(
 fn insert_reply_record(
     connection: &Connection,
     run_id: &str,
+    post_id: Option<&str>,
+    reply_method: &str,
     author_name: &str,
     account_handle: &str,
     posted_at_text: &str,
@@ -276,10 +304,12 @@ fn insert_reply_record(
 ) -> anyhow::Result<()> {
     connection.execute(
         "INSERT INTO x_assistant_reply_records (
-            run_id, author_name, account_handle, posted_at_text, post_text, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, datetime('now', '+8 hours'))",
+            run_id, post_id, reply_method, author_name, account_handle, posted_at_text, post_text, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now', '+8 hours'))",
         params![
             run_id,
+            post_id,
+            reply_method,
             author_name,
             account_handle,
             posted_at_text,
