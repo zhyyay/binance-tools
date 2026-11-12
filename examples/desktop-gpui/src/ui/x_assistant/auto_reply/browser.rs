@@ -274,6 +274,32 @@ impl BrowserReplyRunner {
                 Ok(response) if response.ok => response.result.unwrap_or(Value::Null),
                 Ok(response) => {
                     let reason = response.error.unwrap_or_else(|| "插件回复命令失败".into());
+
+                    // 文本校验失败发生在点击发送按钮之前。扩展只有在已确认关闭
+                    // 当前帖子对应的回复框后，才会返回 COMPOSER_CLOSED 标记。
+                    // 这属于当前帖子跳过，不是发送状态不确定。
+                    if reason.contains("REPLY_CONTENT_VERIFY_FAILED")
+                        && reason.contains("COMPOSER_CLOSED=")
+                    {
+                        binance_tools::db::x_assistant::mark_reply_failed_blocking(&run_id, &reason)
+                            .context("记录回复内容校验失败状态失败")?;
+                        app_log::x_browser_info!(
+                            "[回复] post_id={} 跳过 | 原因=回复文本输入校验不一致；已确认未点击发送且回复框已关闭",
+                            post_id
+                        );
+                        automation::log_browser_event(&format!(
+                            "浏览器插件：推文 ID={} 回复文本校验不一致，确认未点击发送；回复框已关闭，当前帖子标记失败并跳过，继续本批下一条。",
+                            post_id
+                        ));
+                        continue;
+                    }
+
+                    if reason.contains("REPLY_COMPOSER_CLOSE_FAILED") {
+                        binance_tools::db::x_assistant::mark_reply_failed_blocking(&run_id, &reason)
+                            .context("记录回复文本校验失败状态失败")?;
+                        return Err(anyhow::anyhow!("{reason}"));
+                    }
+
                     let _ = binance_tools::db::x_assistant::mark_reply_uncertain_blocking(&run_id, &reason);
                     app_log::x_browser_warn!(
                         "[回复] post_id={} 最终状态=待核验 | 原因={}",
