@@ -580,16 +580,124 @@ impl BrowserAssistantPage {
 
     fn render_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
+
+        let reply_toggle = Button::new("browser-x-auto-reply")
+            .label(if self.x_settings.auto_reply_enabled { "自动回复：开启" } else { "自动回复：关闭" })
+            .small()
+            .when(self.x_settings.auto_reply_enabled, |button| button.primary())
+            .when(!self.x_settings.auto_reply_enabled, |button| button.outline())
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_x_auto_reply(cx)));
+
+        let post_toggle = Button::new("browser-x-auto-post")
+            .label(if self.x_settings.auto_post_enabled { "自动发帖：开启" } else { "自动发帖：关闭" })
+            .small()
+            .when(self.x_settings.auto_post_enabled, |button| button.primary())
+            .when(!self.x_settings.auto_post_enabled, |button| button.outline())
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_x_auto_post(cx)));
+
+        let send_toggle = Button::new("browser-x-auto-send")
+            .label(if self.x_settings.auto_send { "自动发送：开启" } else { "自动发送：关闭" })
+            .small()
+            .when(self.x_settings.auto_send, |button| button.primary())
+            .when(!self.x_settings.auto_send, |button| button.outline())
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_x_auto_send(cx)));
+
+        let daily_down = Button::new("browser-x-daily-down")
+            .label("-100")
+            .small()
+            .outline()
+            .on_click(cx.listener(|this, _, _, cx| this.adjust_daily_reply_limit(-100, cx)));
+        let daily_up = Button::new("browser-x-daily-up")
+            .label("+100")
+            .small()
+            .outline()
+            .on_click(cx.listener(|this, _, _, cx| this.adjust_daily_reply_limit(100, cx)));
+
+        let minute_down = Button::new("browser-x-minute-down")
+            .label("-1")
+            .small()
+            .outline()
+            .on_click(cx.listener(|this, _, _, cx| this.adjust_per_minute_reply_limit(-1, cx)));
+        let minute_up = Button::new("browser-x-minute-up")
+            .label("+1")
+            .small()
+            .outline()
+            .on_click(cx.listener(|this, _, _, cx| this.adjust_per_minute_reply_limit(1, cx)));
+
+        let hourly_down = Button::new("browser-x-hourly-down")
+            .label("-1")
+            .small()
+            .outline()
+            .on_click(cx.listener(|this, _, _, cx| this.adjust_posts_per_hour(-1, cx)));
+        let hourly_up = Button::new("browser-x-hourly-up")
+            .label("+1")
+            .small()
+            .outline()
+            .on_click(cx.listener(|this, _, _, cx| this.adjust_posts_per_hour(1, cx)));
+
+        let crypto = Button::new("browser-x-news-crypto")
+            .label("币圈")
+            .small()
+            .when(self.x_settings.auto_post_news_type == "crypto", |button| button.primary())
+            .when(self.x_settings.auto_post_news_type != "crypto", |button| button.outline())
+            .on_click(cx.listener(|this, _, _, cx| this.set_x_news_type("crypto", cx)));
+        let entertainment = Button::new("browser-x-news-entertainment")
+            .label("娱乐")
+            .small()
+            .when(self.x_settings.auto_post_news_type == "entertainment", |button| button.primary())
+            .when(self.x_settings.auto_post_news_type != "entertainment", |button| button.outline())
+            .on_click(cx.listener(|this, _, _, cx| this.set_x_news_type("entertainment", cx)));
+        let all_news = Button::new("browser-x-news-all")
+            .label("全部")
+            .small()
+            .when(self.x_settings.auto_post_news_type == "all", |button| button.primary())
+            .when(self.x_settings.auto_post_news_type != "all", |button| button.outline())
+            .on_click(cx.listener(|this, _, _, cx| this.set_x_news_type("all", cx)));
+
         v_flex().size_full().min_h_0().gap_3()
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
-                .child(div().text_size(px(13.)).font_semibold().child("连接方式"))
-                .child(div().text_size(px(12.)).child("开始任务或点击检测连接时，桌面端才连接本机 Native Host，再由 Chrome 扩展操作当前活动标签页。"))
-                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("若提示 Native Host 未安装，请运行 browser-assistant 仓库中的 scripts/install-host.ps1，并确认扩展 ID 与安装参数一致。")))
+                .child(div().text_size(px(13.)).font_semibold().child("浏览器连接方式"))
+                .child(div().text_size(px(12.)).child("开始 X 自动化时才连接 Chrome Native Host；普通网页任务仍按当前标签页执行。"))
+                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("若提示 Native Host 未安装，请运行 browser-assistant 项目中的 scripts/install-host.ps1。")))
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
-                .child(div().text_size(px(13.)).font_semibold().child("操作安全"))
+                .child(div().text_size(px(13.)).font_semibold().child("X 自动回复限制"))
+                .child(h_flex().items_center().gap_2()
+                    .child(reply_toggle)
+                    .child(send_toggle))
+                .child(h_flex().items_center().gap_2()
+                    .child(div().w(px(150.)).text_size(px(12.)).child("每日最大回复"))
+                    .child(div().w(px(70.)).text_size(px(12.)).font_semibold().child(self.x_settings.daily_reply_limit.to_string()))
+                    .child(daily_down)
+                    .child(daily_up))
+                .child(h_flex().items_center().gap_2()
+                    .child(div().w(px(150.)).text_size(px(12.)).child("每分钟最大回复"))
+                    .child(div().w(px(70.)).text_size(px(12.)).font_semibold().child(self.x_settings.per_minute_reply_limit.to_string()))
+                    .child(minute_down)
+                    .child(minute_up))
+                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("限制只统计已确认发送成功的回复；达到限制后等待或停止，不会重复提交不确定结果。")))
+            .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
+                .child(div().text_size(px(13.)).font_semibold().child("X 自动发帖限制"))
+                .child(h_flex().items_center().gap_2()
+                    .child(post_toggle)
+                    .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("每小时最大数量")))
+                .child(h_flex().items_center().gap_2()
+                    .child(div().w(px(150.)).text_size(px(12.)).child("每小时最大发帖"))
+                    .child(div().w(px(70.)).text_size(px(12.)).font_semibold().child(self.x_settings.posts_per_hour.to_string()))
+                    .child(hourly_down)
+                    .child(hourly_up))
+                .child(h_flex().items_center().gap_2()
+                    .child(div().w(px(150.)).text_size(px(12.)).child("新闻类型"))
+                    .child(all_news)
+                    .child(crypto)
+                    .child(entertainment)))
+            .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
+                .child(div().text_size(px(13.)).font_semibold().child("X 回复规则"))
+                .child(Input::new(&self.x_reply_rules).small())
+                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("点击「开始」后，如果当前活动标签页是 x.com/home，将自动解析帖子、生成回复并提交；同时按限制参数调度自动发帖。")))
+            .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
+                .child(div().text_size(px(13.)).font_semibold().child("网页操作安全"))
                 .child(div().text_size(px(12.)).child("只操作当前活动的 HTTP/HTTPS 标签页；不会读取 Cookie、localStorage 或 sessionStorage。"))
-                .child(div().text_size(px(12.)).child("点击和输入前请先通过「查找元素」确认 CSS Selector 命中目标。输入会先清空目标，再输入并验证内容。"))
-                .child(div().text_size(px(12.)).child("停止任务会在当前浏览器命令结束后停止；不会关闭 Chrome，也不会主动切换或关闭标签页。")))
+                .child(div().text_size(px(12.)).child("普通网页任务仍可在「自动化任务」中手动编排；X 自动化则由「开始」统一执行回复和发帖。")))
             .into_any_element()
     }
 }
