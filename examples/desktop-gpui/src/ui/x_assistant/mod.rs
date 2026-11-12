@@ -16,8 +16,6 @@ mod own_post_reply;
 mod run_log;
 pub(crate) mod vision;
 
-use browser_assistant_client::BrowserClient;
-use browser_core::BrowserCommand;
 use crate::ui::palette;
 
 use gpui::{prelude::FluentBuilder, *};
