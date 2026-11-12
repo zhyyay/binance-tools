@@ -70,7 +70,7 @@ pub(crate) fn send_openai_text_cancellable(
         Err(error) if error.to_string().contains("结束原因：length") => {
             THINK_MODE_ENABLED.store(false, Ordering::Relaxed);
 
-            super::super::automation::log_event(
+            super::super::automation::log_screenshot_event(
                 "think 模式耗尽生成上限且没有正文；本次关闭 think 重试，后续回复直接关闭 think。",
             );
 
@@ -99,12 +99,12 @@ fn send_text_request(
     think: bool,
 ) -> anyhow::Result<String> {
     if cancel.load(Ordering::Acquire) {
-        super::super::automation::log_event(
+        super::super::automation::log_screenshot_event(
             "文本 AI 请求启动前检测到取消标记=true；请结合 X 助手页面 Drop/停止按钮日志确认来源。",
         );
         anyhow::bail!("已停止（文本 AI 请求启动前检测到取消标记）");
     }
-    super::super::automation::log_event(&format!(
+    super::super::automation::log_screenshot_event(&format!(
         "文本 AI 请求准备发送：model={}，think={}，取消标记=false。",
         model, think
     ));
@@ -153,7 +153,7 @@ fn send_text_request(
     );
 
     if cancel.load(Ordering::Acquire) {
-        super::super::automation::log_event(
+        super::super::automation::log_screenshot_event(
             "文本 AI HTTP 响应返回后检测到取消标记=true；丢弃响应，不继续解析或输入。",
         );
         anyhow::bail!("已停止（文本 AI 响应返回后检测到取消标记）");
