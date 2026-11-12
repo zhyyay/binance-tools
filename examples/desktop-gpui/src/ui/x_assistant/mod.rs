@@ -227,19 +227,12 @@ impl XAssistantPage {
                 self.start_auto_post(cx);
             }
             (true, true) => {
-                app_log::x_info!("[全局开始] 模式=自动回复 + 自动发帖");
-                if !self.auto_send {
-                    app_log::x_warn!(
-                        "[全局开始] 启动条件不满足：回复和发帖同时开启，但自动发送关闭"
-                    );
-                    self.error = None;
-                    self.status = Some(
-                        "自动回复与自动发帖同时开启时，请先在自动回复页面开启「自动发送」，再启动自动化。"
-                            .to_string(),
-                    );
-                    cx.notify();
-                    return;
-                }
+                app_log::x_info!(
+                    "[全局开始] 模式=自动回复 + 自动发帖，自动发送={}",
+                    self.auto_send
+                );
+                // 自动发帖与自动回复独立；自动发送关闭时，回复只做识别/生成/输入，
+                // 自动发帖仍应正常运行。
                 self.start_auto_post(cx);
             }
         }
@@ -263,7 +256,7 @@ impl XAssistantPage {
         self.status = Some(if self.task_settings.auto_reply_enabled && self.auto_send {
             "自动发帖与浏览器插件自动回复已启动；两类任务通过同一浏览器锁串行操作。点击停止可结束。".to_string()
         } else if self.task_settings.auto_reply_enabled {
-            "自动发帖已启动；自动回复开关虽已开启，但自动发送关闭，本轮只执行发帖。".to_string()
+            "自动发帖与浏览器插件自动回复已启动；自动发送关闭时只生成/输入回复，不提交。两类任务仍通过同一浏览器锁串行操作。".to_string()
         } else {
             "自动发帖已启动；点击停止可结束。".to_string()
         });
@@ -273,11 +266,12 @@ impl XAssistantPage {
         let news_filter = auto_post::content::NewsFilter::from_setting(
             &self.task_settings.auto_post_news_type,
         );
-        let reply_options = if self.task_settings.auto_reply_enabled && self.auto_send {
+        let reply_options = if self.task_settings.auto_reply_enabled {
             Some(vision::VisionReplyOptions {
                 api_url: vision::DEFAULT_OLLAMA_URL.to_string(),
                 model: self.vision_model.clone(),
-                auto_send: true,
+                // 自动发送只控制回复是否提交；关闭时仍允许自动回复流程运行。
+                auto_send: self.auto_send,
                 hover_only: false,
                 stage2_ocr: true,
                 reply_rules: self.reply_rules.read(cx).text().to_string(),
@@ -489,11 +483,6 @@ impl XAssistantPage {
         cx: &mut Context<Self>,
     ) {
         if self.replying {
-            return;
-        }
-        if full_auto && !self.auto_send {
-            self.error = Some("全自动回复需要先开启‘自动发送’。".to_string());
-            cx.notify();
             return;
         }
         if full_auto {
