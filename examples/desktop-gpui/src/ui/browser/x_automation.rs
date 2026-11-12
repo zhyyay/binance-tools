@@ -55,13 +55,21 @@ pub fn run(
         if settings.auto_reply_enabled {
             ensure_daily_limit(settings.daily_reply_limit)?;
             wait_reply_capacity(cancel, settings.per_minute_reply_limit)?;
-            let result = run_reply_round(&mut client, &reply_options, cancel)?;
+            let result = match run_reply_round(&mut client, &reply_options, cancel) {
+                Ok(value) => value,
+                Err(error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
+                Err(error) => return Err(error),
+            };
             if result {
                 reply_count += 1;
                 rounds_since_post += 1;
             } else {
                 rounds_since_post += 1;
-                scroll_timeline(&mut client, cancel)?;
+                match scroll_timeline(&mut client, cancel) {
+                    Ok(()) => {}
+                    Err(error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
+                    Err(error) => return Err(error),
+                }
             }
         }
 
@@ -70,9 +78,11 @@ pub fn run(
                 continue;
             }
             if should_post(settings.posts_per_hour)? {
-                match run_post_round(&mut client, settings.auto_post_news_type.as_str(), cancel)? {
-                    true => post_count += 1,
-                    false => {}
+                match run_post_round(&mut client, settings.auto_post_news_type.as_str(), cancel) {
+                    Ok(true) => post_count += 1,
+                    Ok(false) => {}
+                    Err(error) if cancel.load(Ordering::Acquire) => return Ok((reply_count, post_count)),
+                    Err(error) => return Err(error),
                 }
             }
             rounds_since_post = 0;
