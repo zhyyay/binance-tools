@@ -233,6 +233,7 @@ fn run_post_round(
     };
 
     check_cancel(cancel)?;
+    x_posting::set_posting_method_blocking(post.post_id, "browser")?;
     x_posting::mark_post_submitting_blocking(post.post_id)?;
     let response = client.execute(BrowserCommand::PostXTweet {
         text: post.content.clone(),
