@@ -785,3 +785,19 @@ pub(super) mod native {
         bail!("X 辅助桌面控制仅支持 Windows")
     }
 }
+
+/// AI 回复链路沿用发起方的自动化模式，避免浏览器模式误记为截图模式。
+#[derive(Clone, Copy)]
+pub(super) enum LogMode {
+    Screenshot,
+    Browser,
+}
+
+impl LogMode {
+    pub(super) fn info(self, message: &str) {
+        match self {
+            Self::Screenshot => log_screenshot_event(message),
+            Self::Browser => log_browser_event(message),
+        }
+    }
+}
