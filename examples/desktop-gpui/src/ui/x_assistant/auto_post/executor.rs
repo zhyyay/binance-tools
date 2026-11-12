@@ -24,7 +24,7 @@ use crate::ui::x_assistant::core::{scheduler::next_post_delay, task_queue::run_b
 fn mark_linked_cancel(cancel: &AtomicBool, source: &str) {
     let was_cancelled = cancel.swap(true, Ordering::AcqRel);
     if !was_cancelled {
-        app_log::x_warn!("自动化任务联动停止：{}，已通知相关任务退出", source);
+        app_log::post_warn!("自动化任务联动停止：{}，已通知相关任务退出", source);
     }
 }
 
