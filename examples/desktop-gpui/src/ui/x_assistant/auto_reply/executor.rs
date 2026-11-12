@@ -278,19 +278,19 @@ fn log_round_result(round: usize, result: &VisionReplyResult, elapsed: std::time
 
     if result.completed {
         app_log::x_browser_info!(
-            "[X助手][第{round}轮] 回复成功 | 耗时={duration}"
+            "[第{round}轮] 回复成功 | 耗时={duration}"
         );
     } else if result.summary.starts_with("提交结果未知") {
         app_log::x_browser_warn!(
-            "[X助手][第{round}轮] 发送状态不确定 | 原因={reason} | 耗时={duration}"
+            "[第{round}轮] 发送状态不确定 | 原因={reason} | 耗时={duration}"
         );
     } else if result.skipped_duplicate || result.summary.starts_with("继续扫描下一帖") {
         app_log::x_browser_info!(
-            "[X助手][第{round}轮] 跳过 | 原因={reason} | 耗时={duration}"
+            "[第{round}轮] 跳过 | 原因={reason} | 耗时={duration}"
         );
     } else {
         app_log::x_browser_error!(
-            "[X助手][第{round}轮] 回复失败 | 原因={reason} | 耗时={duration}"
+            "[第{round}轮] 回复失败 | 原因={reason} | 耗时={duration}"
         );
     }
 }
@@ -307,15 +307,15 @@ fn log_round_error(
 
     if cancel.load(Ordering::Acquire) {
         app_log::x_browser_info!(
-            "[X助手][第{round}轮] 已停止 | 原因={reason} | 耗时={duration}"
+            "[第{round}轮] 已停止 | 原因={reason} | 耗时={duration}"
         );
     } else if error.downcast_ref::<vision::SendOutcomeUncertain>().is_some() {
         app_log::x_browser_warn!(
-            "[X助手][第{round}轮] 发送状态不确定 | 原因={reason} | 耗时={duration}"
+            "[第{round}轮] 发送状态不确定 | 原因={reason} | 耗时={duration}"
         );
     } else {
         app_log::x_browser_error!(
-            "[X助手][第{round}轮] 回复失败 | 原因={reason} | 耗时={duration}"
+            "[第{round}轮] 回复失败 | 原因={reason} | 耗时={duration}"
         );
     }
 }
