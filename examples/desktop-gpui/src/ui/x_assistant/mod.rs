@@ -1225,14 +1225,23 @@ impl XAssistantPage {
             .into_any_element()
     }
     fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 菜单诊断：开始构建运行状态按钮");
         let status_button = self.render_status_tab_button(cx);
+        app_log::info!("X 菜单诊断：运行状态按钮构建完成，开始构建自动回复按钮");
         let reply_flow_button = self.render_reply_flow_button(cx);
+        app_log::info!("X 菜单诊断：自动回复按钮构建完成，开始构建自动发帖按钮");
         let auto_post_button = self.render_auto_post_button(cx);
+        app_log::info!("X 菜单诊断：自动发帖按钮构建完成，开始构建全局开始按钮");
         let start_all_button = self.render_start_all_button(cx);
+        app_log::info!("X 菜单诊断：全局开始按钮构建完成，开始构建全局停止按钮");
         let stop_all_button = self.render_stop_all_button(cx);
+        app_log::info!("X 菜单诊断：全局停止按钮构建完成，开始构建回复列表按钮");
         let reply_list_button = self.render_reply_list_button(cx);
+        app_log::info!("X 菜单诊断：回复列表按钮构建完成，开始构建发帖历史按钮");
         let post_history_button = self.render_post_history_button(cx);
+        app_log::info!("X 菜单诊断：发帖历史按钮构建完成，开始构建任务设置按钮");
         let task_settings_button = self.render_task_settings_button(cx);
+        app_log::info!("X 菜单诊断：全部按钮构建完成，开始组装菜单容器");
 
         let theme = cx.theme();
         // 六个页面统一使用下划线 Tabs；运行状态和全局控制按钮位于同一行。
