@@ -22,7 +22,7 @@ impl LogTail {
     pub(super) fn new() -> Self {
         let directory = app_log::log_dir().unwrap_or_else(|_| PathBuf::from("logs"));
         let mut viewer = Self {
-            sources: ["x-assistant.log", "auto-post.log"]
+            sources: ["x-assistant.log"]
                 .into_iter()
                 .map(|name| Source {
                     base_name: name,
