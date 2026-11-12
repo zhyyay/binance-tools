@@ -11,10 +11,10 @@ mod ocr_status;
 mod option;
 mod post_history;
 mod reply_list;
-mod reply_filter;
+pub(crate) mod reply_filter;
 mod own_post_reply;
 mod run_log;
-mod vision;
+pub(crate) mod vision;
 
 use browser_assistant_client::BrowserClient;
 use browser_core::BrowserCommand;
