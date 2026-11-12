@@ -9,6 +9,7 @@ use browser_core::BrowserCommand;
 use serde_json::Value;
 
 use crate::ui::x_assistant::{
+    automation,
     reply_filter,
     vision::{self, VisionReplyOptions},
     auto_post::content::{NewsFilter, prepare_next_post_blocking},
@@ -242,6 +243,7 @@ fn run_reply_round(
             &prompt,
             &post_text,
             cancel,
+            automation::LogMode::Browser,
         )?;
         check_cancel(cancel)?;
 
