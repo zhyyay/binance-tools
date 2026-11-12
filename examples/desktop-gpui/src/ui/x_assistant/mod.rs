@@ -710,12 +710,6 @@ impl XAssistantPage {
         self.persist_task_settings(cx);
     }
 
-    fn adjust_per_minute_reply_limit(&mut self, delta: i8, cx: &mut Context<Self>) {
-        let next = i16::from(self.task_settings.per_minute_reply_limit) + i16::from(delta);
-        self.task_settings.per_minute_reply_limit = next.clamp(1, 60) as u8;
-        self.persist_task_settings(cx);
-    }
-
     fn persist_task_settings(&mut self, cx: &mut Context<Self>) {
         match binance_tools::db::x_posting::save_task_settings_blocking(&self.task_settings) {
             Ok(()) => {
@@ -877,42 +871,7 @@ impl XAssistantPage {
             .into_any_element()
     }
 
-    fn render_per_minute_reply_limit_controls(&self, cx: &mut Context<Self>) -> AnyElement {
-        let minus_button = Button::new("x-task-minute-reply-limit-minus")
-            .small()
-            .outline()
-            .label("−")
-            .on_click(cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：每分钟最大回复数减一");
-                this.adjust_per_minute_reply_limit(-1, cx);
-            }))
-            .into_any_element();
-
-        let plus_button = Button::new("x-task-minute-reply-limit-plus")
-            .small()
-            .outline()
-            .label("+")
-            .on_click(cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：每分钟最大回复数加一");
-                this.adjust_per_minute_reply_limit(1, cx);
-            }))
-            .into_any_element();
-
-        v_flex()
-            .gap_1()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_size(px(12.)).child("每分钟最大回复数量"))
-                    .child(minus_button)
-                    .child(
-                        div()
-                            .text_size(px(14.))
-                            .font_semibold()
-                            .child(format!("{} 条", self.task_settings.per_minute_reply_limit)),
-                    )
-                    .child(plus_button),
+ld(plus_button),
             )
             .child(
                 div()
