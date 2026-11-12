@@ -72,14 +72,14 @@ impl BrowserReplyRunner {
             }
 
             if binance_tools::db::x_assistant::replied_to_account_within_day_blocking(&account)? {
-                automation::log_event(&format!(
+                automation::log_browser_event(&format!(
                     "浏览器插件：跳过 24 小时内已回复账号 {}，推文 ID={}",
                     account, post_id
                 ));
                 continue;
             }
 
-            automation::log_event(&format!(
+            automation::log_browser_event(&format!(
                 "浏览器插件：选中推文 ID={}，作者={}，账号={}，正文长度={} 字。",
                 post_id,
                 author_name,
@@ -115,7 +115,7 @@ impl BrowserReplyRunner {
             check_cancel(cancel)?;
             binance_tools::db::x_assistant::mark_reply_submitting_blocking(&run_id)?;
 
-            automation::log_event(&format!(
+            automation::log_browser_event(&format!(
                 "浏览器插件：回复内容已生成并保存，准备提交推文 ID={}。",
                 post_id
             ));
@@ -140,7 +140,7 @@ impl BrowserReplyRunner {
                         let _ = binance_tools::db::x_assistant::mark_reply_uncertain_blocking(&run_id, &reason);
                         return Err(anyhow::Error::new(vision::SendOutcomeUncertain).context(reason));
                     }
-                    automation::log_event(&format!(
+                    automation::log_browser_event(&format!(
                         "浏览器插件：推文 ID={} 回复已发送并收到成功确认。",
                         post_id
                     ));
@@ -186,7 +186,7 @@ impl BrowserReplyRunner {
 
 pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
     check_cancel(cancel)?;
-    automation::log_event(&format!("浏览器插件：{reason}，滚动时间线加载下一批推文。"));
+    automation::log_browser_event(&format!("浏览器插件：{reason}，滚动时间线加载下一批推文。"));
     crate::ui::x_assistant::core::task_queue::run_browser_task(|| {
         let mut client = BrowserClient::connect()
             .context("连接浏览器插件失败，无法滚动 X 时间线")?;
