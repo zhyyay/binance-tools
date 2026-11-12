@@ -241,7 +241,7 @@ impl BrowserReplyRunner {
                 Ok(reply) => reply,
                 Err(error) if error.downcast_ref::<reply_filter::ReplyQualityRejected>().is_some() => {
                     automation::log_browser_event(&format!(
-                        "AI 质量过滤：推文 ID={} 两次生成均不合格，跳过当前帖子并继续检查本批下一条；原因={}。",
+                        "AI 质量过滤：推文 ID={} 两次生成均不合格，已标记为跳过；不输入、不发送、不终止任务，继续检查本批下一条；原因={}。",
                         post_id, error
                     ));
                     continue;
@@ -423,19 +423,33 @@ impl BrowserReplyRunner {
 
 pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
     check_cancel(cancel)?;
-    automation::log_browser_event(&format!("浏览器插件：{reason}，滚动时间线加载下一批推文。"));
+
+    // 空闲浏览时使用不固定的滚动距离和停留时间，避免每次都机械地滚动同样距离。
+    // 只在当前批次处理结束/跳过后调用；正在生成或提交回复时不会触发滚动。
+    let entropy = RandomState::new().build_hasher().finish();
+    let delta_y = 280 + (entropy % 341) as i32;
+    let pause_ms = 900 + ((entropy >> 8) % 2101);
+    automation::log_browser_event(&format!(
+        "浏览器插件：{reason}；模拟浏览时间线，随机向下滚动 {delta_y}px，停留约 {pause_ms}ms 后继续。"
+    ));
+
     crate::ui::x_assistant::core::task_queue::run_browser_task(|| {
         let mut client = BrowserClient::connect()
             .context("连接浏览器插件失败，无法滚动 X 时间线")?;
-        let response = client.execute(BrowserCommand::ScrollAutomation { delta_y: 620 })?;
+        let response = client.execute(BrowserCommand::ScrollAutomation { delta_y })?;
         anyhow::ensure!(
             response.ok,
             "浏览器插件滚动失败：{}",
             response.error.unwrap_or_default()
         );
-        for _ in 0..8 {
+
+        let elapsed = Duration::from_millis(pause_ms);
+        let mut waited = Duration::ZERO;
+        while waited < elapsed {
             check_cancel(cancel)?;
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            let slice = (elapsed - waited).min(Duration::from_millis(100));
+            std::thread::sleep(slice);
+            waited += slice;
         }
         Ok(())
     })
