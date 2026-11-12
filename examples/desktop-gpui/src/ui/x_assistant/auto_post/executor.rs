@@ -243,6 +243,18 @@ fn submit_prepared_post_via_browser_assistant(
     let mut client = BrowserClient::connect()
         .context("无法连接浏览器助手 Native Host；请检查扩展和 Native Host 安装")?;
 
+    let window = client.execute(BrowserCommand::OpenAutomationWindow)
+        .context("打开独立 X 自动化窗口失败")?;
+    ensure!(
+        window.ok,
+        "打开独立 X 自动化窗口失败：{}",
+        window.error.unwrap_or_default()
+    );
+    app_log::post_info!(
+        "[浏览器助手发帖] 独立 X 自动化窗口已就绪：{}",
+        window.result.unwrap_or(Value::Null)
+    );
+
     let page = client.execute(BrowserCommand::GetPageInfo)
         .context("读取浏览器助手当前标签页失败")?;
     ensure!(
