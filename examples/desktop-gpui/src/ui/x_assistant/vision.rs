@@ -62,10 +62,6 @@ pub(super) mod text_ai;
 pub const DEFAULT_OLLAMA_URL: &str = "http://192.168.31.60:11434/v1";
 pub const DEFAULT_VISION_MODEL: &str = "qwen3.5:4b";
 
-// 连续滚动达到阈值后刷新时间线，避免反复处理旧帖子。
-const SCROLLS_BEFORE_REFRESH: u64 = 8;
-static FEED_SCROLL_COUNT: AtomicU64 = AtomicU64::new(0);
-
 std::thread_local! {
     static ACTIVE_SCREENSHOT_DIR: RefCell<Option<PathBuf>> = RefCell::new(None);
 }
@@ -181,9 +177,6 @@ struct VisionDecision {
     refresh_posts: bool,
     #[serde(default)]
     composer_open: bool,
-    #[serde(default)]
-    #[serde(default)]
-    #[serde(default)]
     #[serde(default)]
     completed: bool,
     // 视觉模型必须区分原帖下方已发布回复与编辑框中的草稿。
