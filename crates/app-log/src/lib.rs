@@ -247,29 +247,54 @@ macro_rules! x_error {
     };
 }
 
+#[macro_export]
+macro_rules! x_screenshot_info {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Info, format!("[X助手][截图自动化] {}", format!($($arg)*)));
+    };
+}
+#[macro_export]
+macro_rules! x_browser_info {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Info, format!("[X助手][浏览器自动化] {}", format!($($arg)*)));
+    };
+}
+#[macro_export]
+macro_rules! x_browser_warn {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Warn, format!("[X助手][浏览器自动化] {}", format!($($arg)*)));
+    };
+}
+#[macro_export]
+macro_rules! x_browser_error {
+    ($($arg:tt)*) => {
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Error, format!("[X助手][浏览器自动化] {}", format!($($arg)*)));
+    };
+}
+
 /// 自动发帖日志统一写入 logs/auto-post.log。
 #[macro_export]
 macro_rules! post_debug {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("x-assistant.log", $crate::Level::Debug, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Debug, format!("[X助手][截图自动化][自动发帖] {}", format!($($arg)*)));
     };
 }
 #[macro_export]
 macro_rules! post_info {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("x-assistant.log", $crate::Level::Info, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Info, format!("[X助手][截图自动化][自动发帖] {}", format!($($arg)*)));
     };
 }
 #[macro_export]
 macro_rules! post_warn {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("x-assistant.log", $crate::Level::Warn, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Warn, format!("[X助手][截图自动化][自动发帖] {}", format!($($arg)*)));
     };
 }
 #[macro_export]
 macro_rules! post_error {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("x-assistant.log", $crate::Level::Error, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Error, format!("[X助手][截图自动化][自动发帖] {}", format!($($arg)*)));
     };
 }
 
