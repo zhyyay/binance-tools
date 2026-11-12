@@ -395,7 +395,7 @@ impl BrowserAssistantPage {
                 .child(div().w(px(100.)).text_size(px(12.)).child("输入内容"))
                 .child(div().flex_1().child(Input::new(&self.text_input).small())))
             .child(div().text_size(px(11.)).text_color(palette::muted(theme))
-                .child("点击、输入和滚动通过扩展的真实鼠标/键盘事件执行；输入操作会先清空目标，再输入并回读校验。"))));
+                .child("点击、输入和滚动通过扩展的真实鼠标/键盘事件执行；输入操作会先清空目标，再输入并回读校验。")));
         let buttons = [
             ("browser-add-page", "读取页面信息", StepKind::ReadPage),
             ("browser-add-text", "读取网页文本", StepKind::ReadText),
@@ -466,7 +466,7 @@ impl BrowserAssistantPage {
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(13.)).font_semibold().child("连接方式"))
                 .child(div().text_size(px(12.)).child("开始任务或点击检测连接时，桌面端才连接本机 Native Host，再由 Chrome 扩展操作当前活动标签页。"))
-                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("若提示 Native Host 未安装，请运行 browser-assistant 仓库中的 scripts/install-host.ps1，并确认扩展 ID 与安装参数一致。"))))
+                .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("若提示 Native Host 未安装，请运行 browser-assistant 仓库中的 scripts/install-host.ps1，并确认扩展 ID 与安装参数一致。"))
             .child(v_flex().gap_2().rounded(px(8.)).border_1().border_color(palette::border(theme)).bg(palette::surface(theme)).p_3()
                 .child(div().text_size(px(13.)).font_semibold().child("操作安全"))
                 .child(div().text_size(px(12.)).child("只操作当前活动的 HTTP/HTTPS 标签页；不会读取 Cookie、localStorage 或 sessionStorage。"))
