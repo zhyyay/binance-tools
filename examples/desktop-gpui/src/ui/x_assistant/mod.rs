@@ -906,8 +906,9 @@ impl XAssistantPage {
         app_log::x_info!("X 任务设置诊断：每小时发帖控件构建完成");
         let daily_reply_controls = self.render_daily_reply_limit_controls(cx);
         app_log::x_info!("X 任务设置诊断：每日回复限制控件构建完成");
-        let minute_reply_controls = self.render_per_minute_reply_limit_controls(cx);
-        app_log::x_info!("X 任务设置诊断：每分钟回复限制控件构建完成");
+        // 暂时不在设置面板挂载每分钟限流控件，隔离 GPUI 渲染崩溃；
+        // 每分钟限流配置和执行逻辑继续保留，不影响后台任务。
+        app_log::x_info!("X 任务设置诊断：每分钟限流 UI 暂时隐藏，执行逻辑保留");
 
         let theme = cx.theme();
         app_log::x_info!("X 任务设置诊断：主题读取完成");
@@ -939,7 +940,6 @@ impl XAssistantPage {
                     .child(own_post_reply_button),
             )
             .child(rate_controls)
-            .child(minute_reply_controls)
             .child(daily_reply_controls)
             .child(
                 div()
