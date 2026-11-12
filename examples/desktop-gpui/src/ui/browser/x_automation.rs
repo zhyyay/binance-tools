@@ -438,3 +438,27 @@ fn is_rate_limited(message: &str) -> bool {
         || message.contains("过于频繁")
         || message.contains("安全验证")
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{is_global_stop_error, is_x_timeline_error_page};
+
+    #[test]
+    fn detects_x_timeline_error_page_without_counting_a_round() {
+        assert!(is_x_timeline_error_page("出错了。请尝试重新加载。"));
+        assert!(is_x_timeline_error_page("Something went wrong. Try reloading."));
+        assert!(!is_x_timeline_error_page("Home\nFor you\nFollowing"));
+    }
+
+    #[test]
+    fn daily_post_limit_and_security_challenge_are_global_stops() {
+        assert!(is_global_stop_error(
+            "GLOBAL_STOP: DAILY_POST_LIMIT_REACHED: 已达到每日帖子上限"
+        ));
+        assert!(is_global_stop_error(
+            "CHALLENGE_DETECTED: 页面出现安全验证"
+        ));
+        assert!(!is_global_stop_error("TIMELINE_RELOAD_REQUIRED: 临时页面错误"));
+    }
+}
