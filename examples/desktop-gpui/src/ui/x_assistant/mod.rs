@@ -1213,25 +1213,29 @@ impl XAssistantPage {
         button
     }
 
-    fn render_reply_list_button(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_reply_list_button(&self, _cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 菜单诊断：回复列表按钮 A，读取选中状态");
         let selected = self.show_reply_list;
-        v_flex()
+        app_log::info!("X 菜单诊断：回复列表按钮 B，创建外层容器");
+        let container = v_flex()
             .w(px(112.))
-            .gap_1()
-            .child(
-                Button::new("x-assistant-reply-list-tab")
-                    .ghost()
-                    .small()
-                    .label("回复列表")
-                    .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(2.))
-                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            )
-            .into_any_element()
+            .gap_1();
+        app_log::info!("X 菜单诊断：回复列表按钮 C，使用普通 div 替代 Button");
+        let button = div()
+            .id("x-assistant-reply-list-tab")
+            .child("回复列表（临时诊断）");
+        app_log::info!("X 菜单诊断：回复列表按钮 D，普通 div 已创建");
+        let indicator = div()
+            .w_full()
+            .h(px(2.))
+            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
+        app_log::info!("X 菜单诊断：回复列表按钮 E，选中指示条已创建");
+        let result = container
+            .child(button)
+            .child(indicator)
+            .into_any_element();
+        app_log::info!("X 菜单诊断：回复列表按钮 F，转换为 AnyElement，构建完成");
+        result
     }
     fn render_post_history_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.show_post_history;
