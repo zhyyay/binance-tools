@@ -136,6 +136,7 @@ fn run_once_with_mode(
     cancel: &AtomicBool,
     filter: NewsFilter,
     require_enabled: bool,
+    hourly_limit_override: Option<u8>,
 ) -> anyhow::Result<Option<SubmitResult>> {
     app_log::post_info!("[01/12] 单次任务启动，filter={:?}，require_enabled={}", filter, require_enabled);
     ensure!(!cancel.load(Ordering::Acquire), "自动发帖已停止");
@@ -148,8 +149,11 @@ fn run_once_with_mode(
     app_log::post_info!("[03/12] 检查每小时发布上限");
     let hourly_count = binance_tools::db::x_posting::count_posts_last_hour_blocking()?;
     app_log::post_info!("[03/12] 最近一小时发布数量 {} 条", hourly_count);
+    let hourly_limit = hourly_limit_override
+        .unwrap_or(settings.posts_per_hour)
+        .clamp(1, 10);
     ensure!(
-        hourly_count < u64::from(settings.posts_per_hour.clamp(1, 10)),
+        hourly_count < u64::from(hourly_limit),
         "已达到每小时发布上限，暂不能执行发帖（测试发帖同样计入限额）"
     );
     app_log::post_info!("[04/12] 发帖前同步最新 RSS 新闻");
@@ -207,14 +211,91 @@ fn run_once_with_mode(
 }
 
 pub fn run_once(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<Option<SubmitResult>> {
-    run_once_with_mode(cancel, filter, true)
+    run_once_with_mode(cancel, filter, true, None)
 }
 
 /// 测试按钮只准备并提交一条真实帖子，不启动持续循环；测试帖子同样计入小时限额。
 pub fn run_test_once(cancel: &AtomicBool, filter: NewsFilter) -> anyhow::Result<SubmitResult> {
-    let result = run_once_with_mode(cancel, filter, false)?
+    let result = run_once_with_mode(cancel, filter, false, None)?
         .context("所选新闻类型没有可用于测试的未发布候选")?;
     Ok(result)
+}
+
+/// 浏览器助手专用：执行一次测试发帖，使用浏览器助手任务设置中的每小时上限。
+pub fn run_browser_assistant_test_once(
+    cancel: &AtomicBool,
+    filter: NewsFilter,
+    posts_per_hour: u8,
+) -> anyhow::Result<SubmitResult> {
+    let result = run_once_with_mode(cancel, filter, false, Some(posts_per_hour))?
+        .context("所选新闻类型没有可用于测试的未发布候选")?;
+    Ok(result)
+}
+
+/// 浏览器助手专用自动发帖循环。只读取调用方传入的浏览器助手发帖限制，
+/// 不读取或修改 X 自动回复设置；关闭/停止由本任务自己的取消信号控制。
+pub fn run_browser_assistant_auto_post_loop(
+    cancel: &AtomicBool,
+    filter: NewsFilter,
+    posts_per_hour: u8,
+) -> anyhow::Result<u64> {
+    let mut published_this_run = 0_u64;
+    let hourly_limit = u64::from(posts_per_hour.clamp(1, 10));
+
+    loop {
+        if cancel.load(Ordering::Acquire) {
+            return Ok(published_this_run);
+        }
+
+        let published_last_hour = binance_tools::db::x_posting::count_posts_last_hour_blocking()?;
+        if published_last_hour >= hourly_limit {
+            crate::ui::x_assistant::automation::log_post_event(&format!(
+                "浏览器助手自动发帖达到每小时上限 {hourly_limit}，60 秒后重新检查。"
+            ));
+            if wait_or_cancel(cancel, Duration::from_secs(60)).is_err() {
+                return Ok(published_this_run);
+            }
+            continue;
+        }
+
+        let age = binance_tools::db::x_posting::seconds_since_last_post_blocking()?;
+        let delay = next_post_delay(posts_per_hour, age);
+        if !delay.is_zero() {
+            crate::ui::x_assistant::automation::log_post_event(&format!(
+                "浏览器助手自动发帖频率控制：还需等待 {} 秒。",
+                delay.as_secs()
+            ));
+            if wait_or_cancel(cancel, delay).is_err() {
+                return Ok(published_this_run);
+            }
+            continue;
+        }
+
+        match run_once_with_mode(cancel, filter, false, Some(posts_per_hour))? {
+            Some(result) if result.outcome == SubmitOutcome::Published => {
+                published_this_run += 1;
+                crate::ui::x_assistant::automation::log_post_event(&format!(
+                    "浏览器助手自动发帖成功：post_id={}，本轮累计 {} 条。",
+                    result.post_id, published_this_run
+                ));
+            }
+            Some(result) if result.outcome == SubmitOutcome::Unknown => {
+                anyhow::bail!(
+                    "发帖结果不确定（post_id={}），已记录为 unknown，必须人工核验后才能继续。",
+                    result.post_id
+                );
+            }
+            Some(result) => anyhow::bail!("未预期的发帖结果：{}", result.message),
+            None => {
+                crate::ui::x_assistant::automation::log_post_event(
+                    "当前没有可发布候选，60 秒后重新检查。"
+                );
+                if wait_or_cancel(cancel, Duration::from_secs(60)).is_err() {
+                    return Ok(published_this_run);
+                }
+            }
+        }
+    }
 }
 
 /// 按数据库中的每小时上限持续发布。未知结果、AI/浏览器错误都会终止本轮，
