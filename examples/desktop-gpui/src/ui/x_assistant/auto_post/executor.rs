@@ -142,16 +142,20 @@ fn run_once_with_mode(
     ensure!(!cancel.load(Ordering::Acquire), "自动发帖已停止");
     app_log::post_info!("[02/12] 读取任务设置");
     let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
-    app_log::post_info!("[02/12] 配置读取完成，auto_post_enabled={}，posts_per_hour={}", settings.auto_post_enabled, settings.posts_per_hour);
+    let hourly_limit = hourly_limit_override
+        .unwrap_or(settings.posts_per_hour)
+        .clamp(1, 10);
+    app_log::post_info!(
+        "[02/12] 配置读取完成，require_enabled={}，本次使用每小时上限={} 条",
+        require_enabled,
+        hourly_limit
+    );
     if require_enabled && !settings.auto_post_enabled {
         return Ok(None);
     }
     app_log::post_info!("[03/12] 检查每小时发布上限");
     let hourly_count = binance_tools::db::x_posting::count_posts_last_hour_blocking()?;
     app_log::post_info!("[03/12] 最近一小时发布数量 {} 条", hourly_count);
-    let hourly_limit = hourly_limit_override
-        .unwrap_or(settings.posts_per_hour)
-        .clamp(1, 10);
     ensure!(
         hourly_count < u64::from(hourly_limit),
         "已达到每小时发布上限，暂不能执行发帖（测试发帖同样计入限额）"
