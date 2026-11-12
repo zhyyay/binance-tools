@@ -2,7 +2,7 @@
 //!
 //! 帖子解析、回复框定位、输入、提交和发送提示核验均由扩展完成；
 //! Rust 侧只负责筛选、AI 回复生成、去重和发送状态持久化。
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{sync::atomic::{AtomicBool, Ordering}, time::{Duration, Instant}};
 
 use anyhow::{Context, bail};
 use browser_assistant_client::BrowserClient;
@@ -17,6 +17,8 @@ use super::super::{
 #[derive(Default)]
 pub(super) struct BrowserReplyRunner {
     seen_post_ids: std::collections::HashSet<String>,
+    batch_replies: usize,
+    last_refresh_at: Option<Instant>,
 }
 
 impl BrowserReplyRunner {
@@ -52,9 +54,48 @@ impl BrowserReplyRunner {
             if url.is_empty() { "<未返回>" } else { url }
         ));
 
+        // 每 5 分钟刷新一次独立自动化窗口，避免时间线长期运行后 DOM/数据状态陈旧。
+        const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+        let now = Instant::now();
+        let should_refresh = self
+            .last_refresh_at
+            .is_some_and(|last| now.duration_since(last) >= REFRESH_INTERVAL);
+        if self.last_refresh_at.is_none() {
+            self.last_refresh_at = Some(now);
+        }
+        if should_refresh {
+            automation::log_browser_event("自动回复：运行已满 5 分钟，刷新独立 X 自动化页面（等同 F5）。");
+            let reload_result = client.execute(BrowserCommand::ReloadPage);
+            let reload_ok = matches!(reload_result, Ok(ref response) if response.ok);
+            if !reload_ok {
+                let reason = match reload_result {
+                    Ok(response) => response.error.unwrap_or_else(|| "刷新命令未成功".into()),
+                    Err(error) => format!("{error:#}"),
+                };
+                automation::log_browser_event(&format!(
+                    "自动回复：F5 刷新失败，尝试点击 X 主页恢复：{reason}"
+                ));
+                let home = client.execute(BrowserCommand::Click {
+                    selector: "a[href='/home']".into(),
+                })?;
+                anyhow::ensure!(home.ok, "刷新失败且点击 X 主页也失败：{}", home.error.unwrap_or_default());
+            }
+            for _ in 0..20 {
+                check_cancel(cancel)?;
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            self.last_refresh_at = Some(Instant::now());
+            self.batch_replies = 0;
+            automation::log_browser_event("自动回复：页面刷新/主页恢复等待完成，重新解析最新时间线。");
+        }
+
         check_cancel(cancel)?;
-        automation::log_browser_event("时间线解析：请求浏览器插件读取最多 50 条已加载推文。");
-        let response = client.get_x_posts(Some(50))?;
+        const POSTS_PER_BATCH: usize = 10;
+        const MAX_REPLIES_PER_BATCH: usize = 3;
+        automation::log_browser_event(&format!(
+            "时间线解析：请求浏览器插件读取本批最多 {POSTS_PER_BATCH} 条已加载推文；每批最多回复 {MAX_REPLIES_PER_BATCH} 条。"
+        ));
+        let response = client.get_x_posts(Some(POSTS_PER_BATCH))?;
         if !response.ok {
             let message = response.error.unwrap_or_else(|| "读取 X 时间线失败".to_string());
             if is_rate_limited(&message) {
@@ -76,6 +117,11 @@ impl BrowserReplyRunner {
                 serde_json::to_string(&result).unwrap_or_else(|_| "<JSON 序列化失败>".into())
             ));
         }
+        let batch_post_ids = posts
+            .iter()
+            .map(|post| string_at(post, &["id"]))
+            .filter(|id| !id.is_empty() && id.chars().all(|ch| ch.is_ascii_digit()))
+            .collect::<Vec<_>>();
         for (index, post) in posts.into_iter().enumerate() {
             check_cancel(cancel)?;
             let post_id = string_at(&post, &["id"]);
@@ -147,13 +193,23 @@ impl BrowserReplyRunner {
                 "严格遵守下面列出的每一条回复规则；规则之间不得取舍。生成一条不换行、使用原帖主要语言的回复，只返回回复正文，不要解释或加引号。输出前逐条核对，任一规则不满足就重新生成。\n帖子正文：{post_text}\n回复规则：{}",
                 options.reply_rules.trim()
             );
-            let reply_text = reply_filter::generate_compliant_reply(
+            let reply_text = match reply_filter::generate_compliant_reply(
                 options,
                 &prompt,
                 &post_text,
                 cancel,
                 automation::LogMode::Browser,
-            )?;
+            ) {
+                Ok(reply) => reply,
+                Err(error) if error.downcast_ref::<reply_filter::ReplyQualityRejected>().is_some() => {
+                    automation::log_browser_event(&format!(
+                        "AI 质量过滤：推文 ID={} 两次生成均不合格，跳过当前帖子并继续检查本批下一条；原因={}。",
+                        post_id, error
+                    ));
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             check_cancel(cancel)?;
 
             let run_id = format!(
@@ -246,10 +302,19 @@ impl BrowserReplyRunner {
                         confirmation_source,
                         created_tweet_id
                     );
+                    self.batch_replies += 1;
                     automation::log_browser_event(&format!(
-                        "浏览器插件：推文 ID={} 回复已发送并收到成功确认。",
-                        post_id
+                        "浏览器插件：推文 ID={} 回复已发送并收到成功确认；本批已成功回复 {}/3 条。",
+                        post_id, self.batch_replies
                     ));
+                    if self.batch_replies >= 3 {
+                        self.seen_post_ids.extend(batch_post_ids.iter().cloned());
+                        self.batch_replies = 0;
+                        automation::log_browser_event(&format!(
+                            "本批 10 条推文已达到最多 3 条回复限制；剩余帖子全部跳过，准备滚动并重新解析新一批。批次 ID 数量={}。",
+                            batch_post_ids.len()
+                        ));
+                    }
                     return Ok(VisionReplyResult {
                         screenshots: Vec::new(),
                         author_name,
@@ -284,6 +349,14 @@ impl BrowserReplyRunner {
                     return Err(anyhow::Error::new(vision::SendOutcomeUncertain).context(reason));
                 }
             }
+        }
+
+        if self.batch_replies > 0 {
+            automation::log_browser_event(&format!(
+                "本批推文已扫描完毕，实际成功回复 {} 条（未达到 3 条上限）；下一轮滚动后重新计数。",
+                self.batch_replies
+            ));
+            self.batch_replies = 0;
         }
 
         Ok(VisionReplyResult {
