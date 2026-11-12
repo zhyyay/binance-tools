@@ -421,6 +421,12 @@ fn run_migrations(connection: &Connection) -> anyhow::Result<()> {
             CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_created_at
                 ON x_assistant_reply_records(created_at DESC);
 
+            CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_post_id
+                ON x_assistant_reply_records(post_id);
+
+            CREATE INDEX IF NOT EXISTS idx_x_assistant_reply_records_method
+                ON x_assistant_reply_records(reply_method);
+
             CREATE TABLE IF NOT EXISTS crypto_news (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source TEXT NOT NULL,
@@ -492,6 +498,18 @@ fn run_migrations(connection: &Connection) -> anyhow::Result<()> {
         )?;
     }
 
+    add_column_if_missing(
+        connection,
+        "x_assistant_reply_records",
+        "post_id",
+        "TEXT",
+    )?;
+    add_column_if_missing(
+        connection,
+        "x_assistant_reply_records",
+        "reply_method",
+        "TEXT NOT NULL DEFAULT 'screenshot'",
+    )?;
     add_column_if_missing(
         connection,
         "x_assistant_reply_records",
