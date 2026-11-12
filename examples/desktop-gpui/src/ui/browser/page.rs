@@ -242,6 +242,18 @@ impl BrowserAssistantPage {
         cx.notify();
     }
 
+    fn set_x_news_type(&mut self, news_type: &'static str, cx: &mut Context<Self>) {
+        self.x_settings.auto_post_news_type = match news_type {
+            "crypto" => "crypto",
+            "entertainment" => "entertainment",
+            _ => "all",
+        }
+        .to_string();
+        self.persist_x_settings();
+        self.log(format!("X 自动发帖新闻类型已切换为：{}", self.x_settings.auto_post_news_type));
+        cx.notify();
+    }
+
     fn start_task(&mut self, cx: &mut Context<Self>) {
         if self.busy { return; }
         let use_x_automation =
