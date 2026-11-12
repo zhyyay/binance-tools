@@ -239,7 +239,7 @@ impl BrowserReplyRunner {
                 automation::LogMode::Browser,
             ) {
                 Ok(reply) => reply,
-                Err(error) if error.downcast_ref::<reply_filter::ReplyQualityRejected>().is_some() => {
+                Err(error) if is_quality_rejection(&error) => {
                     automation::log_browser_event(&format!(
                         "AI 质量过滤：推文 ID={} 两次生成均不合格，已标记为跳过；不输入、不发送、不终止任务，继续检查本批下一条；原因={}。",
                         post_id, error
@@ -449,6 +449,18 @@ impl BrowserReplyRunner {
             summary: "当前已加载的时间线中没有新的可回复帖子，已跳过本轮。".into(),
         })
     }
+}
+
+/// 只在 AI 回复生成/校验调用点识别质量拒绝；该错误只允许跳过当前帖子。
+fn is_quality_rejection(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<reply_filter::ReplyQualityRejected>()
+            .is_some()
+            || cause
+                .to_string()
+                .contains("回复连续两次未通过质量过滤")
+    })
 }
 
 pub(super) fn scroll_to_next_post(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
