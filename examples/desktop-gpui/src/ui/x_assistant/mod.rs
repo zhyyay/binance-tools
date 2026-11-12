@@ -921,7 +921,10 @@ let panel = v_flex()
                         div()
                             .text_size(px(11.))
                             .text_color(palette::muted(theme))
-                            .child("每滚动 60 秒最多回复 5 条；两次成功回复至少间隔 10 秒。此限制固定启用，不能调高。"),
+                            .child(format!(
+                                "每滚动 60 秒最多回复 {} 条（硬上限 5 条）；两次成功回复至少间隔 10 秒。",
+                                self.task_settings.per_minute_reply_limit.clamp(1, 5)
+                            )),
                     ),
             )
             .child(daily_reply_controls)
