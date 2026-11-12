@@ -24,7 +24,7 @@ fn generate_reply_or_close_composer(
     screenshot_dir: &Path,
     post_id: &impl std::fmt::Display,
     screenshots: &mut Vec<PathBuf>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<Option<String>> {
     match reply_filter::generate_compliant_reply(
         options,
         prompt,
@@ -32,8 +32,8 @@ fn generate_reply_or_close_composer(
         cancel,
         automation::LogMode::Screenshot,
     ) {
-        Ok(reply) => Ok(reply),
-        Err(error) if error.downcast_ref::<reply_filter::ReplyQualityRejected>().is_some() => {
+        Ok(reply) => Ok(Some(reply)),
+        Err(error) if error.chain().any(|cause| cause.downcast_ref::<reply_filter::ReplyQualityRejected>().is_some()) => {
             automation::log_screenshot_event(
                 "当前帖子回复连续两次未通过质量过滤，已放弃该帖子；准备识别并点击关闭图标。",
             );
@@ -54,9 +54,9 @@ fn generate_reply_or_close_composer(
                 "已点击回复弹窗关闭图标，但截图仍检测到弹窗；停止自动化，不处理下一条帖子"
             );
             automation::log_screenshot_event(
-                "已通过识别坐标点击关闭图标，并通过截图确认回复弹窗关闭；本条未输入、未发送。",
+                "已通过识别坐标点击关闭图标，并通过截图确认回复弹窗关闭；本条未输入、未发送；将安全跳过当前帖子。",
             );
-            Err(error).context("回复连续两次未通过质量过滤；已点击关闭图标并确认弹窗关闭，未输入或发送")
+            Ok(None)
         }
         Err(error) => Err(error),
     }
@@ -962,9 +962,20 @@ fn run_visual_reply_inner(
             "严格遵守下面列出的每一条回复规则；规则之间不得取舍。生成一条不换行、使用原帖主要语言的回复，只返回回复正文，不要解释或加引号。输出前逐条核对，任一规则不满足就重新生成。\n帖子正文：{post_text}\n回复规则：{}",
             options.reply_rules.trim()
         );
-        let reply_text = generate_reply_or_close_composer(
+        let Some(reply_text) = generate_reply_or_close_composer(
             &options, &prompt, &post_text, cancel, &dir, &id, &mut screenshots,
-        )?;
+        )? else {
+            automation::log_screenshot_event(
+                "AI 回复连续两次未通过质量过滤；回复弹窗已确认关闭，本条安全跳过，继续扫描下一帖。",
+            );
+            return Ok(quality_rejected_reply_result(
+                std::mem::take(&mut screenshots),
+                author_name,
+                account_handle,
+                posted_at,
+                post_text,
+            ));
+        };
         (
             Point {
                 x: point.0,
@@ -1006,9 +1017,21 @@ fn run_visual_reply_inner(
                     "请严格遵守每一条规则，重写一条不换行、使用原帖主要语言的回复。上一版未通过校验：{error:#}。只返回回复正文，不要解释或加引号。\n帖子正文：{post_text}\n回复规则：{}",
                     options.reply_rules.trim()
                 );
-                generate_reply_or_close_composer(
-            &options, &prompt, &post_text, cancel, &dir, &id, &mut screenshots,
-        )?
+                let Some(reply_text) = generate_reply_or_close_composer(
+                    &options, &prompt, &post_text, cancel, &dir, &id, &mut screenshots,
+                )? else {
+                    automation::log_screenshot_event(
+                        "AI 回复连续两次未通过质量过滤；回复弹窗已确认关闭，本条安全跳过，继续扫描下一帖。",
+                    );
+                    return Ok(quality_rejected_reply_result(
+                        std::mem::take(&mut screenshots),
+                        author_name,
+                        account_handle,
+                        posted_at,
+                        post_text,
+                    ));
+                };
+                reply_text
             }
         };
         (input_point, reply_text)
@@ -2078,6 +2101,27 @@ fn recover_from_ocr_composer_failure(
             recovered_shot.png.display()
         ),
     })
+}
+
+/// 质量过滤拒绝且回复弹窗已由截图确认关闭：返回正常跳过结果，交由运行器滚动下一帖。
+fn quality_rejected_reply_result(
+    screenshots: Vec<PathBuf>,
+    author_name: String,
+    account_handle: String,
+    posted_at: String,
+    post_text: String,
+) -> VisionReplyResult {
+    VisionReplyResult {
+        screenshots,
+        author_name,
+        account_handle,
+        posted_at,
+        post_text,
+        reply_text: String::new(),
+        completed: false,
+        skipped_duplicate: false,
+        summary: "继续扫描下一帖；AI 回复连续两次未通过质量过滤，回复弹窗已确认关闭；未输入、未发送。".to_string(),
+    }
 }
 
 fn skip_post_and_scroll(
