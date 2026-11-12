@@ -30,7 +30,17 @@ impl BrowserReplyRunner {
         automation::log_browser_event("自动回复启动：正在连接 Chrome 浏览器助手 Native Host。");
         let mut client = BrowserClient::connect()
             .context("无法连接 Chrome 浏览器助手。请确认扩展已启用且 Native Host 已安装")?;
-        automation::log_browser_event("自动回复启动：Chrome 浏览器助手连接成功，正在读取当前页面信息。");
+        automation::log_browser_event("自动回复启动：Chrome 浏览器助手连接成功，正在打开独立的 X 自动化窗口。");
+        let window_response = client.execute(BrowserCommand::OpenAutomationWindow)?;
+        anyhow::ensure!(
+            window_response.ok,
+            "打开独立 X 自动化窗口失败：{}",
+            window_response.error.unwrap_or_default()
+        );
+        automation::log_browser_event(&format!(
+            "自动回复启动：独立 X 自动化窗口已就绪，{}。",
+            window_response.result.unwrap_or(Value::Null)
+        ));
         let page_response = client.execute(BrowserCommand::GetPageInfo)?;
         anyhow::ensure!(page_response.ok, "读取 Chrome 当前页面失败：{}", page_response.error.unwrap_or_default());
         let page = page_response.result.unwrap_or(Value::Null);
