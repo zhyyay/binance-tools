@@ -263,17 +263,18 @@ impl BrowserAssistantPage {
         let x_settings = self.x_settings.clone();
         let x_reply_rules = self.x_reply_rules.read(cx).text().to_string();
         self.log(if use_x_automation {
-            "X 自动化启动：将使用浏览器助手自动完成回复/发帖任务。"
+            "X 自动化启动：将使用浏览器助手自动完成回复/发帖任务。".to_string()
         } else {
-            &format!("任务启动，共 {} 个步骤；正在连接浏览器", steps.len())
+            format!("任务启动，共 {} 个步骤；正在连接浏览器", steps.len())
         });
         cx.notify();
 
         self._task = cx.spawn(async move |this, cx| {
             if use_x_automation {
+                let x_cancel = Arc::clone(&cancel);
                 let result = cx.background_spawn(async move {
                     crate::ui::browser::x_automation::run(
-                        &cancel,
+                        &x_cancel,
                         x_settings,
                         x_reply_rules,
                     )
