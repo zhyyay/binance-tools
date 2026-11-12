@@ -304,21 +304,21 @@ impl BrowserReplyRunner {
                     );
                     self.batch_replies += 1;
                     automation::log_browser_event(&format!(
-                        "浏览器插件：推文 ID={} 回复已发送并收到成功确认；本批已成功回复 {}/3 条。",
-                        post_id, self.batch_replies
+                        "浏览器插件：推文 ID={} 回复已发送并收到成功确认；本批已成功回复 {}/{} 条。",
+                        post_id, self.batch_replies, MAX_REPLIES_PER_BATCH
                     ));
-                    let batch_complete = self.batch_replies >= 3;
+                    let batch_complete = self.batch_replies >= MAX_REPLIES_PER_BATCH;
                     if batch_complete {
                         self.seen_post_ids.extend(batch_post_ids.iter().cloned());
                         self.batch_replies = 0;
                         automation::log_browser_event(&format!(
-                            "本批 10 条推文已达到最多 3 条回复限制；剩余帖子全部跳过，准备滚动并重新解析新一批。批次 ID 数量={}。",
+                            "本批 {POSTS_PER_BATCH} 条推文已达到最多 {MAX_REPLIES_PER_BATCH} 条回复限制；剩余帖子全部跳过，准备滚动并重新解析新一批。批次 ID 数量={}。",
                             batch_post_ids.len()
                         ));
                     } else {
                         automation::log_browser_event(&format!(
-                            "本批尚未达到回复上限，保留当前时间线位置；下一轮继续处理本批，当前成功回复 {}/3 条。",
-                            self.batch_replies
+                            "本批尚未达到回复上限，保留当前时间线位置；下一轮继续处理本批，当前成功回复 {}/{} 条。",
+                            self.batch_replies, MAX_REPLIES_PER_BATCH
                         ));
                     }
                     return Ok(VisionReplyResult {
@@ -363,8 +363,8 @@ impl BrowserReplyRunner {
 
         if self.batch_replies > 0 {
             automation::log_browser_event(&format!(
-                "本批推文已扫描完毕，实际成功回复 {} 条（未达到 3 条上限）；下一轮滚动后重新计数。",
-                self.batch_replies
+                "本批推文已扫描完毕，实际成功回复 {} 条（未达到 {} 条上限）；下一轮滚动后重新计数。",
+                self.batch_replies, MAX_REPLIES_PER_BATCH
             ));
             self.batch_replies = 0;
         }
