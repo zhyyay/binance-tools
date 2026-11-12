@@ -24,6 +24,7 @@ pub(crate) fn generate_compliant_reply(
     initial_prompt: &str,
     source_post: &str,
     cancel: &AtomicBool,
+    log_mode: automation::LogMode,
 ) -> anyhow::Result<String> {
     // 首次生成失败后只允许再生成一次；仍不合格就放弃该条，绝不发送。
     const MAX_ATTEMPTS: usize = 2;
@@ -39,8 +40,9 @@ pub(crate) fn generate_compliant_reply(
             &prompt,
             Duration::from_secs(120),
             cancel,
+            log_mode,
         )?;
-        automation::log_screenshot_event(&format!(
+        log_mode.info(&format!(
             "回复生成请求 {attempt}/{MAX_ATTEMPTS} 完成，耗时 {} ms。",
             started.elapsed().as_millis()
         ));
@@ -48,7 +50,7 @@ pub(crate) fn generate_compliant_reply(
         match sanitize_reply(&generated, &options.reply_rules, source_post) {
             Ok(reply) => return Ok(reply),
             Err(error) => {
-                automation::log_screenshot_event(&format!(
+                log_mode.info(&format!(
                     "回复生成请求 {attempt}/{MAX_ATTEMPTS} 未通过质量过滤：{error:#}"
                 ));
                 let limit = reply_char_limit(&options.reply_rules).unwrap_or(280);
