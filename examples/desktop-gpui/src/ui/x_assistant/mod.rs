@@ -1261,25 +1261,33 @@ impl XAssistantPage {
         app_log::info!("X 菜单诊断：发帖历史按钮 F，转换为 AnyElement，构建完成");
         result
     }
-    fn render_task_settings_button(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_task_settings_button(&self, _cx: &mut Context<Self>) -> AnyElement {
+        app_log::info!("X 菜单诊断：任务设置按钮 A，读取选中状态");
         let selected = self.show_task_settings;
-        v_flex()
+        app_log::info!("X 菜单诊断：任务设置按钮 B，创建外层容器");
+        let button = div()
+            .id("x-assistant-task-settings-tab-diagnostic")
             .w(px(112.))
             .gap_1()
-            .child(
-                Button::new("x-assistant-task-settings-tab")
-                    .ghost()
-                    .small()
-                    .label("任务设置")
-                    .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
-            )
+            .px_2()
+            .py_1()
+            .text_size(px(12.))
+            .child("任务设置（临时诊断）");
+        app_log::info!("X 菜单诊断：任务设置按钮 C，普通 div 已创建");
+        let element = v_flex()
+            .w(px(112.))
+            .gap_1()
+            .child(button)
             .child(
                 div()
                     .w_full()
                     .h(px(2.))
                     .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            )
-            .into_any_element()
+            );
+        app_log::info!("X 菜单诊断：任务设置按钮 D，选中指示条已放入容器");
+        let element = element.into_any_element();
+        app_log::info!("X 菜单诊断：任务设置按钮 E，转换为 AnyElement，构建完成");
+        element
     }
     fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
         app_log::info!("X 菜单诊断：开始构建运行状态按钮");
