@@ -43,12 +43,14 @@ impl BrowserReplyRunner {
             "自动回复启动：独立 X 自动化窗口已就绪，window={}。",
             window_info
         ));
-        let route = url.split('?').next().unwrap_or_default().trim_end_matches('/');
-        let is_x_home = route == "https://x.com/home" || route == "http://x.com/home";
-        anyhow::ensure!(
-            is_x_home,
-            "PAGE_CHANGED: 请先将 Chrome 当前活动标签页打开到 https://x.com/home"
-        );
+        // OpenAutomationWindow 返回的是自动化窗口的导航快照，不能把它当作
+        // 当前个人窗口的活动标签页状态。真正的目标页面由扩展的
+        // GetXPosts 命令通过 requireAutomationTab() 读取并校验；
+        // 这样既不会要求用户切换个人窗口，也不会绕过扩展侧的页面安全检查。
+        automation::log_browser_event(&format!(
+            "时间线解析：准备从独立自动化窗口读取 X 首页；窗口返回 URL={}，页面有效性由扩展在目标标签页内校验。",
+            if url.is_empty() { "<未返回>" } else { url }
+        ));
 
         check_cancel(cancel)?;
         automation::log_browser_event("时间线解析：请求浏览器插件读取最多 50 条已加载推文。");
