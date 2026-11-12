@@ -1,7 +1,3 @@
-pub(super) fn log_event(message: &str) {
-    log_screenshot_event(message);
-}
-
 /// 截图/OCR/视觉模型路径统一使用该入口。
 pub(super) fn log_screenshot_event(message: &str) {
     let _ = app_log::write_to(
