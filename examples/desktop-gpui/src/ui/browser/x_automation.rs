@@ -211,8 +211,18 @@ fn run_reply_round(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    app_log::x_info!(
+        "浏览器助手：[自动回复] 时间线解析完成，本轮读取 {} 条推文。",
+        posts.len()
+    );
+    if posts.is_empty() {
+        app_log::x_info!(
+            "浏览器助手：[自动回复] 时间线没有可处理推文，原始 JSON={}",
+            serde_json::to_string_pretty(&timeline_json).unwrap_or_else(|_| timeline_json.to_string())
+        );
+    }
 
-    for post in posts {
+    for (index, post) in posts.into_iter().enumerate() {
         check_cancel(cancel)?;
         let post_id = string_at(&post, &["id"]);
         let post_text = string_at(&post, &["text"]);
@@ -225,26 +235,89 @@ fn run_reply_round(
             || account.is_empty()
             || !post_id.chars().all(|ch| ch.is_ascii_digit())
         {
+            app_log::x_info!(
+                "浏览器助手：[自动回复] 第 {} 条推文字段不完整，跳过；post_id={:?}，账号={:?}，正文长度={}。",
+                index + 1,
+                post_id,
+                account,
+                post_text.chars().count()
+            );
             continue;
         }
 
-        if x_assistant::replied_to_post_id_blocking(&post_id)?
-            || x_assistant::replied_to_account_within_day_blocking(&account)?
-        {
+        app_log::x_info!(
+            "浏览器助手：[自动回复] 第 {} 条推文解析成功：post_id={}，作者={}，账号={}，发布时间={}，正文长度={}。",
+            index + 1,
+            post_id,
+            author_name,
+            account,
+            posted_at,
+            post_text.chars().count()
+        );
+
+        if x_assistant::replied_to_post_id_blocking(&post_id)? {
+            app_log::x_info!(
+                "浏览器助手：[自动回复] 跳过已回复帖子：post_id={}，正文={:?}",
+                post_id,
+                post_text
+            );
             continue;
         }
+        if x_assistant::replied_to_account_within_day_blocking(&account)? {
+            app_log::x_info!(
+                "浏览器助手：[自动回复] 跳过 24 小时内已回复账号：账号={}，post_id={}，正文={:?}",
+                account,
+                post_id,
+                post_text
+            );
+            continue;
+        }
+
+        let reply_target_json = serde_json::to_string_pretty(&serde_json::json!({
+            "post_id": post_id,
+            "text": post_text,
+            "author": {
+                "username": account,
+                "display_name": author_name
+            },
+            "created_at": posted_at,
+            "raw_post": post
+        }))
+        .unwrap_or_else(|error| format!("<推文 JSON 序列化失败：{error}>"));
+        app_log::x_info!(
+            "浏览器助手：[自动回复] 已选定本次 AI 回复目标，完整帖子 JSON：\n{}",
+            reply_target_json
+        );
 
         let prompt = format!(
             "严格遵守下面列出的每一条回复规则；规则之间不得取舍。生成一条不换行、使用原帖主要语言的回复，只返回回复正文，不要解释或加引号。输出前逐条核对，任一规则不满足就重新生成。\n帖子正文：{post_text}\n回复规则：{}",
             options.reply_rules.trim()
         );
-        let reply_text = reply_filter::generate_compliant_reply(
+        let reply_text = match reply_filter::generate_compliant_reply(
             options,
             &prompt,
             &post_text,
             cancel,
             automation::LogMode::Browser,
-        )?;
+        ) {
+            Ok(text) => text,
+            Err(error) => {
+                app_log::x_warn!(
+                    "浏览器助手：[自动回复] AI 回复生成/质量过滤失败，帖子仍未提交：post_id={}，作者={}，账号={}，原帖正文={:?}，失败原因={:#}",
+                    post_id,
+                    author_name,
+                    account,
+                    post_text,
+                    error
+                );
+                return Err(error);
+            }
+        };
+        app_log::x_info!(
+            "浏览器助手：[自动回复] AI 回复通过质量过滤：post_id={}，回复正文={:?}",
+            post_id,
+            reply_text
+        );
         check_cancel(cancel)?;
 
         let run_id = format!(
