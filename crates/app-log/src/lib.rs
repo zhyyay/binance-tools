@@ -251,25 +251,25 @@ macro_rules! x_error {
 #[macro_export]
 macro_rules! post_debug {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("auto-post.log", $crate::Level::Debug, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Debug, format!("[自动发帖] {}", format!($($arg)*)));
     };
 }
 #[macro_export]
 macro_rules! post_info {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("auto-post.log", $crate::Level::Info, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Info, format!("[自动发帖] {}", format!($($arg)*)));
     };
 }
 #[macro_export]
 macro_rules! post_warn {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("auto-post.log", $crate::Level::Warn, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Warn, format!("[自动发帖] {}", format!($($arg)*)));
     };
 }
 #[macro_export]
 macro_rules! post_error {
     ($($arg:tt)*) => {
-        let _ = $crate::write_to("auto-post.log", $crate::Level::Error, format!("[自动发帖] {}", format!($($arg)*)));
+        let _ = $crate::write_to("x-assistant.log", $crate::Level::Error, format!("[自动发帖] {}", format!($($arg)*)));
     };
 }
 
