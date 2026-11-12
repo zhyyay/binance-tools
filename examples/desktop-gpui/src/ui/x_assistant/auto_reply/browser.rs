@@ -27,12 +27,18 @@ impl BrowserReplyRunner {
     ) -> anyhow::Result<VisionReplyResult> {
         check_cancel(cancel)?;
 
+        automation::log_browser_event("自动回复启动：正在连接 Chrome 浏览器助手 Native Host。");
         let mut client = BrowserClient::connect()
             .context("无法连接 Chrome 浏览器助手。请确认扩展已启用且 Native Host 已安装")?;
+        automation::log_browser_event("自动回复启动：Chrome 浏览器助手连接成功，正在读取当前页面信息。");
         let page_response = client.execute(BrowserCommand::GetPageInfo)?;
         anyhow::ensure!(page_response.ok, "读取 Chrome 当前页面失败：{}", page_response.error.unwrap_or_default());
         let page = page_response.result.unwrap_or(Value::Null);
         let url = page.get("url").and_then(Value::as_str).unwrap_or_default();
+        let title = page.get("title").and_then(Value::as_str).unwrap_or_default();
+        automation::log_browser_event(&format!(
+            "自动回复启动：当前页面读取成功，title={title:?}，url={url:?}。"
+        ));
         let route = url.split('?').next().unwrap_or_default().trim_end_matches('/');
         let is_x_home = route == "https://x.com/home" || route == "http://x.com/home";
         anyhow::ensure!(
@@ -41,6 +47,7 @@ impl BrowserReplyRunner {
         );
 
         check_cancel(cancel)?;
+        automation::log_browser_event("时间线解析：请求浏览器插件读取最多 50 条已加载推文。");
         let response = client.get_x_posts(Some(50))?;
         if !response.ok {
             let message = response.error.unwrap_or_else(|| "读取 X 时间线失败".to_string());
@@ -52,7 +59,18 @@ impl BrowserReplyRunner {
 
         let result = response.result.unwrap_or(Value::Null);
         let posts = result.get("posts").and_then(Value::as_array).cloned().unwrap_or_default();
-        for post in posts {
+        automation::log_browser_event(&format!(
+            "时间线解析：插件响应成功，posts 字段类型={}，本次读取到 {} 条推文。",
+            if result.get("posts").and_then(Value::as_array).is_some() { "array" } else { "missing_or_not_array" },
+            posts.len()
+        ));
+        if posts.is_empty() {
+            automation::log_browser_event(&format!(
+                "时间线解析：没有读取到可处理推文，插件原始响应={}",
+                serde_json::to_string(&result).unwrap_or_else(|_| "<JSON 序列化失败>".into())
+            ));
+        }
+        for (index, post) in posts.into_iter().enumerate() {
             check_cancel(cancel)?;
             let post_id = string_at(&post, &["id"]);
             let post_text = string_at(&post, &["text"]);
@@ -60,14 +78,38 @@ impl BrowserReplyRunner {
             let author_name = string_at(&post, &["author", "display_name"]);
             let posted_at = string_at(&post, &["created_at"]);
 
-            if post_id.is_empty()
-                || post_text.is_empty()
-                || account.is_empty()
-                || !post_id.chars().all(|ch| ch.is_ascii_digit())
-            {
+            let missing_fields = [
+                ("id", post_id.is_empty()),
+                ("text", post_text.is_empty()),
+                ("author.username", account.is_empty()),
+                ("id_not_numeric", !post_id.is_empty() && !post_id.chars().all(|ch| ch.is_ascii_digit())),
+            ];
+            if missing_fields.iter().any(|(_, missing)| *missing) {
+                let reasons = missing_fields
+                    .iter()
+                    .filter_map(|(name, missing)| missing.then_some(*name))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                automation::log_browser_event(&format!(
+                    "时间线解析：第 {} 条推文结构不完整，跳过；缺少/不合法字段={}。",
+                    index + 1,
+                    reasons
+                ));
                 continue;
             }
+            automation::log_browser_event(&format!(
+                "时间线解析：第 {} 条推文解析成功，ID={}，作者={}，账号={}，正文长度={} 字。",
+                index + 1,
+                post_id,
+                author_name,
+                account,
+                post_text.chars().count()
+            ));
             if !self.seen_post_ids.insert(post_id.clone()) {
+                automation::log_browser_event(&format!(
+                    "帖子筛选：推文 ID={} 本轮运行中已处理过，跳过重复项。",
+                    post_id
+                ));
                 continue;
             }
 
@@ -79,12 +121,20 @@ impl BrowserReplyRunner {
                 continue;
             }
 
+            let reply_target = serde_json::json!({
+                "id": post_id,
+                "text": post_text,
+                "author": {
+                    "username": account,
+                    "display_name": author_name
+                },
+                "created_at": posted_at,
+                "raw_post": post
+            });
+            let reply_target_json = serde_json::to_string_pretty(&reply_target)
+                .unwrap_or_else(|error| format!("<回复目标 JSON 序列化失败：{error}>"));
             automation::log_browser_event(&format!(
-                "浏览器插件：选中推文 ID={}，作者={}，账号={}，正文长度={} 字。",
-                post_id,
-                author_name,
-                account,
-                post_text.chars().count()
+                "帖子筛选：推文通过全部筛选，确定作为本次 AI 回复目标。\n回复目标 JSON：\n{reply_target_json}"
             ));
 
             let prompt = format!(
