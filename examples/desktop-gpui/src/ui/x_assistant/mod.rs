@@ -1094,185 +1094,138 @@ impl XAssistantPage {
             )
             .into_any_element()
     }
-    fn render_reply_flow_button(&self, _cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：自动回复按钮 A，读取选中状态");
-        let selected = !self.show_run_status
-            && !self.show_reply_list
-            && !self.show_post_history
-            && !self.show_task_settings
-            && !self.show_auto_post;
-
-        app_log::info!("X 菜单诊断：自动回复按钮 B，创建外层容器");
-        let container = v_flex().w(px(112.)).gap_1();
-
-        // 临时使用普通 div 隔离 GPUI Button，确认崩溃是否由 Button 组件引起。
-        app_log::info!("X 菜单诊断：自动回复按钮 C，使用普通 div 替代 Button");
-        let container = container.child(
-            div()
-                .px_2()
-                .py_1()
-                .child("自动回复（临时诊断）"),
-        );
-        app_log::info!("X 菜单诊断：自动回复按钮 D，普通 div 已放入容器");
-
-        app_log::info!("X 菜单诊断：自动回复按钮 E，创建选中指示条");
-        let indicator = div().w_full().h(px(2.));
-        app_log::info!("X 菜单诊断：自动回复按钮 F，应用选中状态样式");
-        let indicator = indicator.when(selected, |line| {
-            line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))
-        });
-
-        app_log::info!("X 菜单诊断：自动回复按钮 G，将指示条放入容器");
-        let container = container.child(indicator);
-        app_log::info!("X 菜单诊断：自动回复按钮 H，转换为 AnyElement");
-        let element = container.into_any_element();
-        app_log::info!("X 菜单诊断：自动回复按钮构建完成");
-        element
-    }
-    fn render_auto_post_button(&self, _cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：自动发帖按钮 A，读取选中状态");
-        let selected = self.show_auto_post;
-
-        app_log::info!("X 菜单诊断：自动发帖按钮 B，创建外层容器");
-        let container = v_flex().w(px(112.)).gap_1();
-
-        // 临时使用普通 div 隔离 GPUI Button，确认崩溃是否由 Button 组件引起。
-        app_log::info!("X 菜单诊断：自动发帖按钮 C，使用普通 div 替代 Button");
-        let container = container.child(
-            div()
-                .px_2()
-                .py_1()
-                .child("自动发帖（临时诊断）"),
-        );
-        app_log::info!("X 菜单诊断：自动发帖按钮 D，普通 div 已放入容器");
-
-        app_log::info!("X 菜单诊断：自动发帖按钮 E，创建选中指示条");
-        let indicator = div().w_full().h(px(2.));
-        app_log::info!("X 菜单诊断：自动发帖按钮 F，应用选中状态样式");
-        let indicator = indicator.when(selected, |line| {
-            line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))
-        });
-
-        app_log::info!("X 菜单诊断：自动发帖按钮 G，将指示条放入容器");
-        let container = container.child(indicator);
-        app_log::info!("X 菜单诊断：自动发帖按钮 H，转换为 AnyElement");
-        let element = container.into_any_element();
-        app_log::info!("X 菜单诊断：自动发帖按钮构建完成");
-        element
-    }
-
-    fn render_start_all_button(&self, _cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：全局开始按钮 A，创建外层容器");
-        let button = div()
-            .id("x-assistant-start-all-automation")
-            .rounded_full()
-            .bg(palette::surface(_cx.theme()))
-            .text_color(palette::text(_cx.theme()))
-            .px_4()
-            .py_1()
-            .when(self.replying, |this| this.opacity(0.5))
-            .child("开始");
-        app_log::info!("X 菜单诊断：全局开始按钮 B，普通 div 已创建");
-        let button = button.into_any_element();
-        app_log::info!("X 菜单诊断：全局开始按钮 C，转换为 AnyElement，构建完成");
-        button
-    }
-
-    fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：全局停止按钮 A，读取主题和运行状态");
-        let theme = cx.theme();
-        let replying = self.replying;
-        app_log::info!("X 菜单诊断：全局停止按钮 B，创建普通 div");
-        let button = div()
-            .id("x-assistant-stop-all-automation")
-            .rounded_full()
-            .bg(palette::surface(theme))
-            .text_color(palette::text(theme))
-            .px_4()
-            .py_1()
-            .when(!replying, |this| this.opacity(0.5))
-            .child("停止");
-        app_log::info!("X 菜单诊断：全局停止按钮 C，普通 div 已创建");
-        let button = button.into_any_element();
-        app_log::info!("X 菜单诊断：全局停止按钮 D，转换为 AnyElement，构建完成");
-        button
-    }
-
-    fn render_reply_list_button(&self, _cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：回复列表按钮 A，读取选中状态");
-        let selected = self.show_reply_list;
-        app_log::info!("X 菜单诊断：回复列表按钮 B，创建外层容器");
-        let container = v_flex()
-            .w(px(112.))
-            .gap_1();
-        app_log::info!("X 菜单诊断：回复列表按钮 C，使用普通 div 替代 Button");
-        let button = div()
-            .id("x-assistant-reply-list-tab")
-            .child("回复列表（临时诊断）");
-        app_log::info!("X 菜单诊断：回复列表按钮 D，普通 div 已创建");
-        let indicator = div()
-            .w_full()
-            .h(px(2.))
-            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
-        app_log::info!("X 菜单诊断：回复列表按钮 E，选中指示条已创建");
-        let result = container
-            .child(button)
-            .child(indicator)
-            .into_any_element();
-        app_log::info!("X 菜单诊断：回复列表按钮 F，转换为 AnyElement，构建完成");
-        result
-    }
-    fn render_post_history_button(&self, _cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：发帖历史按钮 A，读取选中状态");
-        let selected = self.show_post_history;
-        app_log::info!("X 菜单诊断：发帖历史按钮 B，创建外层容器");
-        let container = v_flex()
-            .w(px(112.))
-            .gap_1();
-        app_log::info!("X 菜单诊断：发帖历史按钮 C，使用普通 div 替代 Button");
-        let button = div()
-            .id("x-assistant-post-history-tab")
-            .child("发帖历史（临时诊断）");
-        app_log::info!("X 菜单诊断：发帖历史按钮 D，普通 div 已创建");
-        let indicator = div()
-            .w_full()
-            .h(px(2.))
-            .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0)));
-        app_log::info!("X 菜单诊断：发帖历史按钮 E，选中指示条已创建");
-        let result = container
-            .child(button)
-            .child(indicator)
-            .into_any_element();
-        app_log::info!("X 菜单诊断：发帖历史按钮 F，转换为 AnyElement，构建完成");
-        result
-    }
-    fn render_task_settings_button(&self, _cx: &mut Context<Self>) -> AnyElement {
-        app_log::info!("X 菜单诊断：任务设置按钮 A，读取选中状态");
-        let selected = self.show_task_settings;
-        app_log::info!("X 菜单诊断：任务设置按钮 B，创建外层容器");
-        let button = div()
-            .id("x-assistant-task-settings-tab-diagnostic")
+    fn render_reply_flow_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let selected = !self.show_run_status && !self.show_reply_list && !self.show_post_history && !self.show_task_settings && !self.show_auto_post;
+        v_flex()
             .w(px(112.))
             .gap_1()
-            .px_2()
-            .py_1()
-            .text_size(px(12.))
-            .child("任务设置（临时诊断）");
-        app_log::info!("X 菜单诊断：任务设置按钮 C，普通 div 已创建");
-        let element = v_flex()
-            .w(px(112.))
-            .gap_1()
-            .child(button)
+            .child(
+                Button::new("x-assistant-reply-flow-tab")
+                    .ghost()
+                    .small()
+                    .label("自动回复")
+                    .on_click(cx.listener(|this, _, _, cx| this.show_reply_flow(cx))),
+            )
             .child(
                 div()
                     .w_full()
                     .h(px(2.))
                     .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
-            );
-        app_log::info!("X 菜单诊断：任务设置按钮 D，选中指示条已放入容器");
-        let element = element.into_any_element();
-        app_log::info!("X 菜单诊断：任务设置按钮 E，转换为 AnyElement，构建完成");
-        element
+            )
+            .into_any_element()
+    }
+    fn render_auto_post_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let selected = self.show_auto_post;
+        v_flex()
+            .w(px(112.))
+            .gap_1()
+            .child(
+                Button::new("x-assistant-auto-post-tab")
+                    .ghost()
+                    .small()
+                    .label("自动发帖")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_auto_post(cx))),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(2.))
+                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
+            )
+            .into_any_element()
+    }
+    fn render_start_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        Button::new("x-assistant-start-all-automation")
+            .label("开始")
+            .small()
+            .rounded_full()
+            .bg(palette::surface(theme))
+            .text_color(palette::text(theme))
+            .px_4()
+            .disabled(self.replying)
+            .tooltip("启动自动化回复、发帖")
+            .on_click(cx.listener(|this, _, _, cx| {
+                app_log::x_info!("[全局开始按钮] 点击事件已触发");
+                this.start_all_automation(cx);
+            }))
+            .into_any_element()
+    }
+
+    fn render_stop_all_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        Button::new("x-assistant-stop-all-automation")
+            .label("停止")
+            .small()
+            .rounded_full()
+            .bg(palette::surface(theme))
+            .text_color(palette::text(theme))
+            .px_4()
+            .disabled(!self.replying)
+            .tooltip("中断自动化")
+            .on_click(cx.listener(|this, _, _, cx| this.stop_visual_reply(cx)))
+            .into_any_element()
+    }
+
+    fn render_reply_list_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let selected = self.show_reply_list;
+        v_flex()
+            .w(px(112.))
+            .gap_1()
+            .child(
+                Button::new("x-assistant-reply-list-tab")
+                    .ghost()
+                    .small()
+                    .label("回复列表")
+                    .on_click(cx.listener(|this, _, window, cx| this.open_reply_list(window, cx))),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(2.))
+                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
+            )
+            .into_any_element()
+    }
+    fn render_post_history_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let selected = self.show_post_history;
+        v_flex()
+            .w(px(112.))
+            .gap_1()
+            .child(
+                Button::new("x-assistant-post-history-tab")
+                    .ghost()
+                    .small()
+                    .label("发帖历史")
+                    .on_click(cx.listener(|this, _, window, cx| this.open_post_history(window, cx))),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(2.))
+                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
+            )
+            .into_any_element()
+    }
+    fn render_task_settings_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let selected = self.show_task_settings;
+        v_flex()
+            .w(px(112.))
+            .gap_1()
+            .child(
+                Button::new("x-assistant-task-settings-tab")
+                    .ghost()
+                    .small()
+                    .label("任务设置")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_task_settings(cx))),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(2.))
+                    .when(selected, |line| line.bg(gpui::hsla(0.59, 0.78, 0.56, 1.0))),
+            )
+            .into_any_element()
     }
     fn render_page_menu(&self, cx: &mut Context<Self>) -> AnyElement {
         app_log::info!("X 菜单诊断：开始构建运行状态按钮");
