@@ -1,3 +1,12 @@
+/// 浏览器互斥锁等跨执行模式的基础运行日志，不归类为具体自动化方式。
+pub(super) fn log_runtime_event(message: &str) {
+    let _ = app_log::write_to(
+        "x-assistant.log",
+        app_log::Level::Info,
+        format!("[X助手] {message}"),
+    );
+}
+
 /// 截图/OCR/视觉模型路径统一使用该入口。
 pub(super) fn log_screenshot_event(message: &str) {
     let _ = app_log::write_to(
@@ -239,7 +248,7 @@ pub(super) mod native {
         );
         let target_x = target.x;
         let target_y = target.y;
-        super::log_event(&format!(
+        super::log_screenshot_event(&format!(
             "鼠标目标：客户区坐标 ({window_x}, {window_y}) -> 屏幕坐标 ({target_x}, {target_y})"
         ));
         let mut cursor = POINT::default();
@@ -267,7 +276,7 @@ pub(super) mod native {
             ));
         }
         route.push((target_x, target_y));
-        super::log_event(&format!(
+        super::log_screenshot_event(&format!(
             "鼠标移动路线：全屏随机经过 {waypoint_count} 个中间点，最后落点 ({target_x}, {target_y})；每段速度随机。"
         ));
 
@@ -415,7 +424,7 @@ pub(super) mod native {
             mouse_input(MOUSEEVENTF_LEFTUP),
         ];
         let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
-        super::log_event(&format!(
+        super::log_screenshot_event(&format!(
             "鼠标左键点击事件：{}（已发送 {}/2 个事件）",
             if sent == inputs.len() as u32 {
                 "成功"
@@ -580,7 +589,7 @@ pub(super) mod native {
             "鼠标移出目标屏幕范围"
         );
         send_mouse_absolute(target.x, target.y)?;
-        super::log_event(&format!(
+        super::log_screenshot_event(&format!(
             "提交后鼠标已移开：客户区坐标 ({client_x}, {client_y}) -> 屏幕坐标 ({}, {})",
             target.x, target.y
         ));
@@ -607,7 +616,7 @@ pub(super) mod native {
         );
         let screen_x = target.x;
         let screen_y = target.y;
-        super::log_event(&format!(
+        super::log_screenshot_event(&format!(
             "点击目标：客户区坐标 ({client_x}, {client_y}) -> 屏幕坐标 ({screen_x}, {screen_y})"
         ));
         send_mouse_absolute(screen_x, screen_y)?;
@@ -663,7 +672,7 @@ pub(super) mod native {
             unsafe { ClientToScreen(hwnd, &mut origin) }.as_bool(),
             "无法获取浏览器客户区的屏幕原点"
         );
-        super::log_event(&format!(
+        super::log_screenshot_event(&format!(
             "截图浏览器客户区：{}x{}，屏幕原点 ({}, {})",
             width, height, origin.x, origin.y
         ));
@@ -675,7 +684,7 @@ pub(super) mod native {
         let width = unsafe { GetSystemMetrics(SM_CXSCREEN) };
         let height = unsafe { GetSystemMetrics(SM_CYSCREEN) };
         anyhow::ensure!(width > 0 && height > 0, "无法获取桌面尺寸");
-        super::log_event(&format!("截图整个桌面：{}x{}", width, height));
+        super::log_screenshot_event(&format!("截图整个桌面：{}x{}", width, height));
         capture_rect(path, 0, 0, width, height)
     }
 
