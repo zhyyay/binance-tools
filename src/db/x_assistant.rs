@@ -142,6 +142,25 @@ pub fn list_reply_records_blocking() -> anyhow::Result<Vec<XAssistantReplyRecord
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
+pub fn replied_to_post_id_blocking(post_id: &str) -> anyhow::Result<bool> {
+    if post_id.trim().is_empty() {
+        return Ok(false);
+    }
+    let connection = super::open_default_connection()?;
+    Ok(connection.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM x_assistant_reply_records
+            WHERE post_id = ?1
+              AND (
+                    completed_last_step = 1
+                    OR send_status IN ('submitting', 'uncertain', 'sent', 'duplicate')
+              )
+        )",
+        [post_id.trim()],
+        |row| row.get(0),
+    )?)
+}
+
 pub fn replied_to_account_within_day_blocking(account_handle: &str) -> anyhow::Result<bool> {
     if account_handle.trim().is_empty() {
         return Ok(false);
