@@ -691,156 +691,138 @@ impl XAssistantPage {
     }
 
     fn render_auto_reply_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        Button::new("x-task-auto-reply")
-            .small()
-            .outline()
-            .label(if self.task_settings.auto_reply_enabled {
-                "自动回复调度：开"
-            } else {
-                "自动回复调度：关"
-            })
-            .when(self.task_settings.auto_reply_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| {
+        let enabled = self.task_settings.auto_reply_enabled;
+        div()
+            .id("x-task-auto-reply")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击自动回复开关");
                 this.toggle_task_setting(TaskSetting::AutoReply, cx);
             }))
+            .px_3().py_2().rounded(px(6.))
+            .border_1().border_color(palette::border(cx.theme()))
+            .bg(if enabled { palette::accent(cx.theme()) } else { palette::surface(cx.theme()) })
+            .text_color(if enabled { palette::element_text(cx.theme()) } else { palette::text(cx.theme()) })
+            .text_size(px(12.))
+            .child(if enabled { "自动回复调度：开" } else { "自动回复调度：关" })
             .into_any_element()
     }
 
     fn render_auto_post_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        Button::new("x-task-auto-post")
-            .small()
-            .outline()
-            .label(if self.task_settings.auto_post_enabled {
-                "自动发帖：开"
-            } else {
-                "自动发帖：关"
-            })
-            .when(self.task_settings.auto_post_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| {
+        let enabled = self.task_settings.auto_post_enabled;
+        div()
+            .id("x-task-auto-post")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击自动发帖开关");
                 this.toggle_task_setting(TaskSetting::AutoPost, cx);
             }))
+            .px_3().py_2().rounded(px(6.))
+            .border_1().border_color(palette::border(cx.theme()))
+            .bg(if enabled { palette::accent(cx.theme()) } else { palette::surface(cx.theme()) })
+            .text_color(if enabled { palette::element_text(cx.theme()) } else { palette::text(cx.theme()) })
+            .text_size(px(12.))
+            .child(if enabled { "自动发帖：开" } else { "自动发帖：关" })
             .into_any_element()
     }
 
     fn render_auto_comment_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        Button::new("x-task-auto-comment")
-            .small()
-            .outline()
-            .label(if self.task_settings.auto_comment_enabled {
-                "发布后自动评论：开"
-            } else {
-                "发布后自动评论：关"
-            })
-            .when(self.task_settings.auto_comment_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| {
+        let enabled = self.task_settings.auto_comment_enabled;
+        div()
+            .id("x-task-auto-comment")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击自动评论开关");
                 this.toggle_task_setting(TaskSetting::AutoComment, cx);
             }))
+            .px_3().py_2().rounded(px(6.))
+            .border_1().border_color(palette::border(cx.theme()))
+            .bg(if enabled { palette::accent(cx.theme()) } else { palette::surface(cx.theme()) })
+            .text_color(if enabled { palette::element_text(cx.theme()) } else { palette::text(cx.theme()) })
+            .text_size(px(12.))
+            .child(if enabled { "发布后自动评论：开" } else { "发布后自动评论：关" })
             .into_any_element()
     }
 
     fn render_own_post_reply_setting_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        Button::new("x-task-own-post-reply")
-            .small()
-            .outline()
-            .label(if self.task_settings.own_post_reply_enabled {
-                "回复自己帖子评论：开（预留）"
-            } else {
-                "回复自己帖子评论：关（预留）"
-            })
-            .when(self.task_settings.own_post_reply_enabled, |button| button.primary())
-            .on_click(cx.listener(|this, _, _, cx| {
+        let enabled = self.task_settings.own_post_reply_enabled;
+        div()
+            .id("x-task-own-post-reply")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：点击回复自己帖子评论开关");
                 this.toggle_task_setting(TaskSetting::OwnPostReply, cx);
             }))
+            .px_3().py_2().rounded(px(6.))
+            .border_1().border_color(palette::border(cx.theme()))
+            .bg(if enabled { palette::accent(cx.theme()) } else { palette::surface(cx.theme()) })
+            .text_color(if enabled { palette::element_text(cx.theme()) } else { palette::text(cx.theme()) })
+            .text_size(px(12.))
+            .child(if enabled { "回复自己帖子评论：开（预留）" } else { "回复自己帖子评论：关（预留）" })
             .into_any_element()
     }
 
     fn render_post_rate_controls(&self, cx: &mut Context<Self>) -> AnyElement {
-        let minus_button = Button::new("x-task-post-rate-minus")
-            .small()
-            .outline()
-            .label("−")
-            .on_click(cx.listener(|this, _, _, cx| {
+        let theme = cx.theme();
+        let minus_button = div()
+            .id("x-task-post-rate-minus")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：每小时发帖数量减一");
                 this.adjust_posts_per_hour(-1, cx);
             }))
-            .into_any_element();
-
-        let plus_button = Button::new("x-task-post-rate-plus")
-            .small()
-            .outline()
-            .label("+")
-            .on_click(cx.listener(|this, _, _, cx| {
+            .px_3().py_1().rounded(px(5.))
+            .border_1().border_color(palette::border(theme))
+            .child("−").into_any_element();
+        let plus_button = div()
+            .id("x-task-post-rate-plus")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：每小时发帖数量加一");
                 this.adjust_posts_per_hour(1, cx);
             }))
-            .into_any_element();
-
-        h_flex()
-            .items_center()
-            .gap_2()
+            .px_3().py_1().rounded(px(5.))
+            .border_1().border_color(palette::border(theme))
+            .child("+").into_any_element();
+        h_flex().items_center().gap_2()
             .child(div().text_size(px(12.)).child("每小时发布数量"))
             .child(minus_button)
-            .child(
-                div()
-                    .text_size(px(14.))
-                    .font_semibold()
-                    .child(format!("{} 条", self.task_settings.posts_per_hour)),
-            )
+            .child(div().text_size(px(14.)).font_semibold().child(format!("{} 条", self.task_settings.posts_per_hour)))
             .child(plus_button)
             .into_any_element()
     }
 
     fn render_daily_reply_limit_controls(&self, cx: &mut Context<Self>) -> AnyElement {
-        let minus_button = Button::new("x-task-daily-reply-limit-minus")
-            .small()
-            .outline()
-            .label("−")
-            .on_click(cx.listener(|this, _, _, cx| {
+        let theme = cx.theme();
+        let minus_button = div()
+            .id("x-task-daily-reply-limit-minus")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：每日最大回复数减 100");
                 this.adjust_daily_reply_limit(-100, cx);
             }))
-            .into_any_element();
-
-        let plus_button = Button::new("x-task-daily-reply-limit-plus")
-            .small()
-            .outline()
-            .label("+")
-            .on_click(cx.listener(|this, _, _, cx| {
+            .px_3().py_1().rounded(px(5.))
+            .border_1().border_color(palette::border(theme))
+            .child("−").into_any_element();
+        let plus_button = div()
+            .id("x-task-daily-reply-limit-plus")
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
                 app_log::x_info!("X 任务设置：每日最大回复数加 100");
                 this.adjust_daily_reply_limit(100, cx);
             }))
-            .into_any_element();
-
-        // render() 可能被 GPUI 高频调用；今日成功数已在页面初始化时缓存，
-        // 不要在渲染回调中同步访问 SQLite，避免阻塞 UI 线程。
+            .px_3().py_1().rounded(px(5.))
+            .border_1().border_color(palette::border(theme))
+            .child("+").into_any_element();
         let today_count = self.reply_today_success.to_string();
-
-        v_flex()
-            .gap_1()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_size(px(12.)).child("每日最大回复数量"))
-                    .child(minus_button)
-                    .child(
-                        div()
-                            .text_size(px(14.))
-                            .font_semibold()
-                            .child(format!("{} 条", self.task_settings.daily_reply_limit)),
-                    )
-                    .child(plus_button)
-            )
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(palette::muted(cx.theme()))
-                    .child(format!("今日已成功回复：{today_count} 条。达到上限后自动停止；当日重启仍会锁定，需手动调高此数字。"))
-            )
+        v_flex().gap_1()
+            .child(h_flex().items_center().gap_2()
+                .child(div().text_size(px(12.)).child("每日最大回复数量"))
+                .child(minus_button)
+                .child(div().text_size(px(14.)).font_semibold().child(format!("{} 条", self.task_settings.daily_reply_limit)))
+                .child(plus_button))
+            .child(div().text_size(px(11.)).text_color(palette::muted(theme))
+                .child(format!("今日已成功回复：{today_count} 条。达到上限后自动停止；当日重启仍会锁定，需手动调高此数字。")))
             .into_any_element()
     }
 
