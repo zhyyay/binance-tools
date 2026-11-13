@@ -340,7 +340,7 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
     let daily_reply_limit = settings.daily_reply_limit.clamp(100, 2_000);
     let per_minute_reply_limit = settings.per_minute_reply_limit.clamp(1, 5);
     let minimum_reply_interval_seconds = settings.minimum_reply_interval_seconds.clamp(10, 120);
-    connection.execute(
+    let changed = connection.execute(
         "UPDATE x_assistant_task_settings
          SET auto_reply_enabled = ?1,
              auto_post_enabled = ?2,
@@ -369,6 +369,23 @@ pub fn save_task_settings_blocking(settings: &XAssistantTaskSettings) -> anyhow:
             minimum_reply_interval_seconds,
         ],
     )?;
+    ensure!(changed == 1, "X 自动化任务设置记录不存在，保存失败");
+
+    let saved_limits: (i64, i64, i64) = connection.query_row(
+        "SELECT daily_reply_limit, per_minute_reply_limit,
+                minimum_reply_interval_seconds
+         FROM x_assistant_task_settings WHERE id = 1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    ensure!(
+        saved_limits == (
+            i64::from(daily_reply_limit),
+            i64::from(per_minute_reply_limit),
+            i64::from(minimum_reply_interval_seconds),
+        ),
+        "X 回复频率设置保存后回读不一致：数据库={saved_limits:?}"
+    );
     Ok(())
 }
 
