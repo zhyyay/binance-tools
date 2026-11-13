@@ -195,7 +195,7 @@ fn ensure_schema(connection: &Connection) -> anyhow::Result<()> {
     if !has_per_minute_reply_limit {
         connection.execute(
             "ALTER TABLE x_assistant_task_settings
-             ADD COLUMN per_minute_reply_limit INTEGER NOT NULL DEFAULT 5",
+             ADD COLUMN per_minute_reply_limit INTEGER NOT NULL DEFAULT 2",
             [],
         )?;
     }
@@ -823,6 +823,9 @@ mod tests {
         let defaults = XAssistantTaskSettings::default();
         assert!(!defaults.auto_post_enabled);
         assert_eq!(defaults.posts_per_hour, 3);
+        assert_eq!(defaults.daily_reply_limit, 1000);
+        assert_eq!(defaults.per_minute_reply_limit, 2);
+        assert_eq!(defaults.minimum_reply_interval_seconds, 30);
         assert_eq!(defaults.auto_post_news_type, "all");
     }
 
