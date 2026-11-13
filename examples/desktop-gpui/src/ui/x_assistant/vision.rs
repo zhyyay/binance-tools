@@ -384,50 +384,10 @@ pub(super) fn randomized_recovery(cancel: &AtomicBool, reason: &str) -> anyhow::
             }
         }
     }
-    let seed = next_random_u64();
-    // 普通报错优先小步滚动，不随机刷新页面。
-    // 只有非报错场景才保留原来的随机刷新策略。
-    if !reason.contains("报错") && seed % 2 == 0 {
-        automation::native::activate_browser()?;
-        automation::log_event(&format!("全自动恢复：{reason}；随机选择 F5 刷新页面。"));
-        automation::native::press_f5()?;
-        wait_cancel(cancel, Duration::from_secs(3))?;
-        let dir = PathBuf::from("data")
-            .join("x_assistant")
-            .join("screenshots");
-        fs::create_dir_all(&dir)?;
-        let id = app_log::beijing_now().format("%Y%m%d-%H%M%S-%3f");
-        let mut screenshots = Vec::new();
-        let check_shot = capture_desktop(&dir, &id, "full-auto-refresh-check", &mut screenshots)?;
-        check_cancel(cancel)?;
-        anyhow::ensure!(
-            check_shot.width >= 800 && check_shot.height >= 600,
-            "刷新确认检查截图尺寸异常（{}x{}），停止本轮以免漏处理确认弹窗",
-            check_shot.width,
-            check_shot.height
-        );
-        match ocr::recognize_reload_confirmation(&check_shot.png) {
-            Ok(true) => {
-                automation::log_event(
-                    "全自动恢复：识别到浏览器重新加载确认提示，按 Enter 确认刷新。",
-                );
-                automation::native::press_enter()?;
-                wait_cancel(cancel, Duration::from_secs(5))?;
-            }
-            Ok(false) => {
-                automation::log_event("全自动恢复：全桌面截图未发现重新加载确认提示。");
-            }
-            Err(error) => {
-                anyhow::bail!(
-                    "无法识别全桌面刷新检查截图，停止本轮以免跳过可能存在的确认弹窗：{error:#}"
-                );
-            }
-        }
-        automation::log_event("全自动恢复：F5 刷新检查完成。");
-        check_cancel(cancel)
-    } else {
-        scroll_down_in_small_steps(cancel, reason)
-    }
+    automation::log_event(&format!(
+        "全自动恢复：{reason}；使用固定恢复流程，不随机刷新页面。"
+    ));
+    scroll_down_in_small_steps(cancel, reason)
 }
 
 fn scroll_down_in_small_steps(cancel: &AtomicBool, reason: &str) -> anyhow::Result<()> {
@@ -466,31 +426,27 @@ fn scroll_down_random_steps(
 ) -> anyhow::Result<()> {
     check_cancel(cancel)?;
     automation::native::activate_browser()?;
-    let range = max_steps.saturating_sub(min_steps).saturating_add(1);
-    let total = min_steps + (next_random_u64() % u64::from(range)) as u32;
+
+    // 固定、可诊断的滚动步数；不再随机改变滚动距离、批次或停顿。
+    let total = min_steps.saturating_add(max_steps).saturating_div(2).max(1);
+    let batch_size = 3_u32;
     automation::log_event(&format!(
-        "全自动准备：{reason}；本轮随机滚动 {total} 格，分段执行。"
+        "全自动准备：{reason}；按固定流程滚动 {total} 格。"
     ));
 
     let mut moved = 0;
     while moved < total {
         check_cancel(cancel)?;
-        let remaining = total - moved;
-        let batch = (2 + (next_random_u64() % 4) as u32).min(remaining);
+        let batch = batch_size.min(total - moved);
         automation::native::scroll_down_by_notches(batch as i32)?;
         moved += batch;
-
-        // 每段等待时间不同，偶尔停顿更久；取消时最多约 100ms 响应。
-        let delay_ms = 160 + (next_random_u64() % 541);
-        wait_cancel(cancel, Duration::from_millis(delay_ms))?;
-        if moved < total && next_random_u64() % 4 == 0 {
-            let pause_ms = 350 + (next_random_u64() % 651);
-            wait_cancel(cancel, Duration::from_millis(pause_ms))?;
+        if moved < total {
+            wait_cancel(cancel, Duration::from_millis(300))?;
         }
     }
 
     automation::log_event(&format!(
-        "全自动准备：随机滚动完成，共 {total} 格，页面稳定后识别。"
+        "全自动准备：固定滚动完成，共 {total} 格，页面稳定后识别。"
     ));
     check_cancel(cancel)
 }
