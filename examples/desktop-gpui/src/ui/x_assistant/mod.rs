@@ -971,8 +971,13 @@ let rate_controls = self.render_post_rate_controls(cx);
 let daily_reply_controls = self.render_daily_reply_limit_controls(cx);
 let per_minute_reply_controls = self.render_per_minute_reply_limit_controls(cx);
 let minimum_interval_controls = self.render_minimum_reply_interval_controls(cx);
-// 频率限制以固定说明展示，不挂载此前引发 GPUI 渲染问题的动态 +/- 控件。
-        app_log::x_info!("X 任务设置：每分钟最多 5 条、成功回复间隔至少 10 秒");
+// 三项回复频率设置均可调整并保存；任务启动后使用当前页面快照执行。 
+        app_log::x_info!(
+            "X 任务设置：每日上限={}，每分钟上限={}，最短间隔={} 秒",
+            self.task_settings.daily_reply_limit,
+            self.task_settings.per_minute_reply_limit,
+            self.task_settings.minimum_reply_interval_seconds
+        );
 
         let theme = cx.theme();
 let panel = v_flex()
