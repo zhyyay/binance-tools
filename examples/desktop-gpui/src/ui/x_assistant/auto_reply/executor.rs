@@ -410,9 +410,9 @@ fn wait_for_minute_reply_capacity(
     }
 }
 
-/// Enforces at least 10 seconds between confirmed replies.
-/// The database stores completed_at with second precision, so the query uses
-/// an 11-second stored-time threshold to guarantee 10 real seconds have elapsed.
+/// Enforces the configured minimum interval between confirmed replies.
+/// The database stores completed_at with second precision, so one extra second
+/// is added to the query threshold to guarantee the full real-time interval.
 fn wait_for_minimum_reply_interval(
     cancel: &AtomicBool,
     settings: &XAssistantTaskSettings,
