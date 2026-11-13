@@ -465,11 +465,14 @@ fn ensure_daily_reply_capacity(settings: &XAssistantTaskSettings) -> Result<()> 
 /// 全自动回复公开入口。
 ///
 /// 校验参数后创建运行器，启动自动回复。
-pub fn run(options: VisionReplyOptions, cancel: &AtomicBool) -> Result<VisionReplyResult> {
+pub fn run(
+    options: VisionReplyOptions,
+    cancel: &AtomicBool,
+    settings: XAssistantTaskSettings,
+) -> Result<VisionReplyResult> {
     anyhow::ensure!(options.auto_send, "全自动回复需要开启自动发送");
     anyhow::ensure!(!options.hover_only, "全自动回复不能使用仅移动模式");
 
-    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
     AutoReplyRunner::default().run(options, cancel, settings, None)
 }
 
