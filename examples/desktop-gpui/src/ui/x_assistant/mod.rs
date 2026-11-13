@@ -265,6 +265,7 @@ impl XAssistantPage {
         let news_filter = auto_post::content::NewsFilter::from_setting(
             &self.task_settings.auto_post_news_type,
         );
+        let reply_settings = self.task_settings.clone();
         let reply_options = if self.task_settings.auto_reply_enabled {
             Some(vision::VisionReplyOptions {
                 api_url: vision::DEFAULT_OLLAMA_URL.to_string(),
@@ -320,7 +321,12 @@ impl XAssistantPage {
             let result = cx
                 .background_spawn(async move {
                     if let Some(options) = reply_options {
-                        auto_post::executor::run_with_auto_reply(Arc::clone(&cancel), options, news_filter)
+                        auto_post::executor::run_with_auto_reply(
+                            Arc::clone(&cancel),
+                            options,
+                            news_filter,
+                            reply_settings,
+                        )
                     } else {
                         auto_post::executor::run_loop(&cancel, news_filter)
                     }
@@ -534,6 +540,13 @@ impl XAssistantPage {
         let auto_send = self.auto_send;
         let reply_rules = self.reply_rules.read(cx).text().to_string();
         let model = self.vision_model.clone();
+        let reply_settings = self.task_settings.clone();
+        app_log::x_info!(
+            "本轮设置：每日上限={} 条，每分钟上限={} 条，每条成功回复至少间隔 {} 秒",
+            reply_settings.daily_reply_limit,
+            reply_settings.per_minute_reply_limit,
+            reply_settings.minimum_reply_interval_seconds
+        );
         let cancel = Arc::clone(&self.cancel_reply);
         let cancel_for_ui = Arc::clone(&cancel);
         let cancel_reason_for_ui = Arc::clone(&self.cancel_reason);
@@ -588,7 +601,7 @@ impl XAssistantPage {
                     if full_auto {
                         // 全自动回复在每轮识图、滚动和恢复动作处分别取得浏览器锁，
                         // 让自动发帖任务可以在两轮回复之间安全使用同一浏览器。
-                        full_auto::run(options, &cancel)
+                        full_auto::run(options, &cancel, reply_settings)
                     } else {
                         core::task_queue::run_browser_task(|| {
                             vision::run_visual_reply(options, &cancel)
@@ -707,6 +720,19 @@ impl XAssistantPage {
     fn adjust_daily_reply_limit(&mut self, delta: i16, cx: &mut Context<Self>) {
         let next = i32::from(self.task_settings.daily_reply_limit) + i32::from(delta);
         self.task_settings.daily_reply_limit = next.clamp(100, 2_000) as u16;
+        self.persist_task_settings(cx);
+    }
+
+    fn adjust_per_minute_reply_limit(&mut self, delta: i8, cx: &mut Context<Self>) {
+        let next = i16::from(self.task_settings.per_minute_reply_limit) + i16::from(delta);
+        self.task_settings.per_minute_reply_limit = next.clamp(1, 5) as u8;
+        self.persist_task_settings(cx);
+    }
+
+    fn adjust_minimum_reply_interval(&mut self, delta: i16, cx: &mut Context<Self>) {
+        let next = i32::from(self.task_settings.minimum_reply_interval_seconds)
+            + i32::from(delta);
+        self.task_settings.minimum_reply_interval_seconds = next.clamp(10, 120) as u16;
         self.persist_task_settings(cx);
     }
 
@@ -871,6 +897,68 @@ impl XAssistantPage {
             .into_any_element()
     }
 
+    fn render_per_minute_reply_limit_controls(&self, cx: &mut Context<Self>) -> AnyElement {
+        let minus_button = Button::new("x-task-per-minute-reply-limit-minus")
+            .small()
+            .outline()
+            .label("−")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.adjust_per_minute_reply_limit(-1, cx);
+            }));
+        let plus_button = Button::new("x-task-per-minute-reply-limit-plus")
+            .small()
+            .outline()
+            .label("+")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.adjust_per_minute_reply_limit(1, cx);
+            }));
+
+        h_flex()
+            .items_center()
+            .gap_2()
+            .child(div().text_size(px(12.)).child("每分钟最大回复数"))
+            .child(minus_button)
+            .child(
+                div()
+                    .text_size(px(14.))
+                    .font_semibold()
+                    .child(format!("{} 条", self.task_settings.per_minute_reply_limit.clamp(1, 5))),
+            )
+            .child(plus_button)
+            .into_any_element()
+    }
+
+    fn render_minimum_reply_interval_controls(&self, cx: &mut Context<Self>) -> AnyElement {
+        let minus_button = Button::new("x-task-minimum-reply-interval-minus")
+            .small()
+            .outline()
+            .label("−")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.adjust_minimum_reply_interval(-5, cx);
+            }));
+        let plus_button = Button::new("x-task-minimum-reply-interval-plus")
+            .small()
+            .outline()
+            .label("+")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.adjust_minimum_reply_interval(5, cx);
+            }));
+
+        h_flex()
+            .items_center()
+            .gap_2()
+            .child(div().text_size(px(12.)).child("成功回复最短间隔"))
+            .child(minus_button)
+            .child(
+                div()
+                    .text_size(px(14.))
+                    .font_semibold()
+                    .child(format!("{} 秒", self.task_settings.minimum_reply_interval_seconds.clamp(10, 120))),
+            )
+            .child(plus_button)
+            .into_any_element()
+    }
+
     fn render_task_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         app_log::x_info!("X 任务设置：开始渲染设置面板");
 
@@ -881,6 +969,8 @@ let auto_comment_button = self.render_auto_comment_setting_button(cx);
 let own_post_reply_button = self.render_own_post_reply_setting_button(cx);
 let rate_controls = self.render_post_rate_controls(cx);
 let daily_reply_controls = self.render_daily_reply_limit_controls(cx);
+let per_minute_reply_controls = self.render_per_minute_reply_limit_controls(cx);
+let minimum_interval_controls = self.render_minimum_reply_interval_controls(cx);
 // 频率限制以固定说明展示，不挂载此前引发 GPUI 渲染问题的动态 +/- 控件。
         app_log::x_info!("X 任务设置：每分钟最多 5 条、成功回复间隔至少 10 秒");
 
@@ -915,17 +1005,10 @@ let panel = v_flex()
             .child(rate_controls)
             .child(
                 v_flex()
-                    .gap_1()
+                    .gap_2()
                     .child(div().text_size(px(12.)).font_semibold().child("自动回复频率限制"))
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(palette::muted(theme))
-                            .child(format!(
-                                "每滚动 60 秒最多回复 {} 条（硬上限 5 条）；两次成功回复至少间隔 10 秒。",
-                                self.task_settings.per_minute_reply_limit.clamp(1, 5)
-                            )),
-                    ),
+                    .child(per_minute_reply_controls)
+                    .child(minimum_interval_controls),
             )
             .child(daily_reply_controls)
             .child(
