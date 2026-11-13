@@ -797,6 +797,14 @@ mod tests {
 
         ensure_schema(&connection).unwrap();
 
+        let migrated_limits: (i64, i64, i64) = connection.query_row(
+            "SELECT daily_reply_limit, per_minute_reply_limit, minimum_reply_interval_seconds
+             FROM x_assistant_task_settings WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(migrated_limits, (1000, 2, 30));
+
         let news_type: String = connection.query_row(
             "SELECT auto_post_news_type FROM x_assistant_task_settings WHERE id = 1",
             [],
@@ -810,15 +818,16 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         ensure_schema(&connection).unwrap();
 
-        let settings: (i64, i64) = connection
+        let settings: (i64, i64, i64, i64, i64) = connection
             .query_row(
-                "SELECT auto_post_enabled, posts_per_hour
+                "SELECT auto_post_enabled, posts_per_hour, daily_reply_limit,
+                        per_minute_reply_limit, minimum_reply_interval_seconds
                  FROM x_assistant_task_settings WHERE id = 1",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .unwrap();
-        assert_eq!(settings, (0, 3));
+        assert_eq!(settings, (0, 3, 1000, 2, 30));
 
         let defaults = XAssistantTaskSettings::default();
         assert!(!defaults.auto_post_enabled);
