@@ -902,6 +902,7 @@ impl XAssistantPage {
             .small()
             .outline()
             .label("−")
+            .disabled(self.replying)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.adjust_per_minute_reply_limit(-1, cx);
             }));
@@ -909,6 +910,7 @@ impl XAssistantPage {
             .small()
             .outline()
             .label("+")
+            .disabled(self.replying)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.adjust_per_minute_reply_limit(1, cx);
             }));
@@ -933,6 +935,7 @@ impl XAssistantPage {
             .small()
             .outline()
             .label("−")
+            .disabled(self.replying)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.adjust_minimum_reply_interval(-5, cx);
             }));
@@ -940,6 +943,7 @@ impl XAssistantPage {
             .small()
             .outline()
             .label("+")
+            .disabled(self.replying)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.adjust_minimum_reply_interval(5, cx);
             }));
@@ -971,7 +975,7 @@ let rate_controls = self.render_post_rate_controls(cx);
 let daily_reply_controls = self.render_daily_reply_limit_controls(cx);
 let per_minute_reply_controls = self.render_per_minute_reply_limit_controls(cx);
 let minimum_interval_controls = self.render_minimum_reply_interval_controls(cx);
-// 三项回复频率设置均可调整并保存；任务启动后使用当前页面快照执行。 
+// 三项回复频率设置均可调整并保存；任务启动后使用当前页面快照执行。
         app_log::x_info!(
             "X 任务设置：每日上限={}，每分钟上限={}，最短间隔={} 秒",
             self.task_settings.daily_reply_limit,
