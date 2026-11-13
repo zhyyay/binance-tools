@@ -585,6 +585,7 @@ pub fn run_with_auto_reply(
     cancel: Arc<AtomicBool>,
     reply_options: crate::ui::x_assistant::vision::VisionReplyOptions,
     filter: NewsFilter,
+    reply_settings: binance_tools::db::x_posting::XAssistantTaskSettings,
 ) -> anyhow::Result<u64> {
     // 双向同步通道保证：回复线程发出一次请求后等待发帖完成；
     // 发帖线程每次只执行一次发帖调度，不再启动独立无限循环争抢浏览器锁。
@@ -626,6 +627,7 @@ pub fn run_with_auto_reply(
             &reply_cancel,
             post_turn_sender,
             post_done_receiver,
+            reply_settings,
         )
     });
 
