@@ -739,7 +739,13 @@ impl XAssistantPage {
     fn persist_task_settings(&mut self, cx: &mut Context<Self>) {
         match binance_tools::db::x_posting::save_task_settings_blocking(&self.task_settings) {
             Ok(()) => {
-                self.status = Some("X 自动化任务设置已保存到本地 SQLite。".to_string());
+                app_log::x_info!(
+                    "X 任务设置保存并回读成功：每日上限={}，每分钟上限={}，最短间隔={} 秒",
+                    self.task_settings.daily_reply_limit,
+                    self.task_settings.per_minute_reply_limit,
+                    self.task_settings.minimum_reply_interval_seconds
+                );
+                self.status = Some("X 自动化任务设置已保存并回读确认。".to_string());
                 self.error = None;
             }
             Err(error) => {
