@@ -873,21 +873,23 @@ impl XAssistantPage {
         let theme = cx.theme();
         let minus_button = div()
             .id("x-task-daily-reply-limit-minus")
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：每日最大回复数减 100");
-                this.adjust_daily_reply_limit(-100, cx);
-            }))
+            .when(!self.replying, |button| {
+                button.cursor_pointer().on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    app_log::x_info!("X 任务设置：每日最大回复数减 100");
+                    this.adjust_daily_reply_limit(-100, cx);
+                }))
+            })
             .px_3().py_1().rounded(px(5.))
             .border_1().border_color(palette::border(theme))
             .child("−").into_any_element();
         let plus_button = div()
             .id("x-task-daily-reply-limit-plus")
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                app_log::x_info!("X 任务设置：每日最大回复数加 100");
-                this.adjust_daily_reply_limit(100, cx);
-            }))
+            .when(!self.replying, |button| {
+                button.cursor_pointer().on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    app_log::x_info!("X 任务设置：每日最大回复数加 100");
+                    this.adjust_daily_reply_limit(100, cx);
+                }))
+            })
             .px_3().py_1().rounded(px(5.))
             .border_1().border_color(palette::border(theme))
             .child("+").into_any_element();
