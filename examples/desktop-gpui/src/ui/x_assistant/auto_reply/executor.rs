@@ -13,6 +13,7 @@ use super::super::{
     vision::{self, VisionReplyOptions, VisionReplyResult},
 };
 use crate::ui::x_assistant::core::task_queue::run_browser_task;
+use binance_tools::db::x_posting::XAssistantTaskSettings;
 
 const REPLY_ROUNDS_PER_POST: usize = 10;
 
@@ -36,8 +37,15 @@ impl AutoReplyRunner {
         &mut self,
         options: VisionReplyOptions,
         cancel: &AtomicBool,
+        settings: XAssistantTaskSettings,
         mut post_scheduler: Option<(SyncSender<()>, Receiver<bool>)>,
     ) -> Result<VisionReplyResult> {
+        automation::log_browser_event(&format!(
+            "本轮设置：每日上限={} 条，每分钟上限={} 条，每条成功回复至少间隔 {} 秒",
+            settings.daily_reply_limit,
+            settings.per_minute_reply_limit,
+            settings.minimum_reply_interval_seconds
+        ));
         automation::log_browser_event("自动回复循环启动");
         // 发帖调度从任务启动即生效，不要求先成功回复一条；
         // 否则时间线持续出现重复账号/无可回复帖子时，自动发帖会一直得不到执行机会。
@@ -53,9 +61,9 @@ impl AutoReplyRunner {
             // 自动发送关闭时是“仅生成/输入回复”模式，不消耗发送额度，
             // 因此不应被每日/每分钟发送上限拦截。
             if options.auto_send {
-                ensure_daily_reply_capacity()?;
-                wait_for_minute_reply_capacity(cancel)?;
-                wait_for_minimum_reply_interval(cancel)?;
+                ensure_daily_reply_capacity(&settings)?;
+                wait_for_minute_reply_capacity(cancel, &settings)?;
+                wait_for_minimum_reply_interval(cancel, &settings)?;
             }
             if Self::is_cancelled(cancel) {
                 return self.stop();
@@ -371,8 +379,10 @@ fn compact_log_value(value: &str) -> String {
 
 /// Enforces a rolling 60-second successful-send limit. When the limit is
 /// reached, the worker waits until the oldest successful reply leaves the window.
-fn wait_for_minute_reply_capacity(cancel: &AtomicBool) -> Result<()> {
-    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
+fn wait_for_minute_reply_capacity(
+    cancel: &AtomicBool,
+    settings: &XAssistantTaskSettings,
+) -> Result<()> {
     let limit = settings.per_minute_reply_limit.clamp(1, 5);
     let mut waiting_logged = false;
 
@@ -403,8 +413,11 @@ fn wait_for_minute_reply_capacity(cancel: &AtomicBool) -> Result<()> {
 /// Enforces at least 10 seconds between confirmed replies.
 /// The database stores completed_at with second precision, so the query uses
 /// an 11-second stored-time threshold to guarantee 10 real seconds have elapsed.
-fn wait_for_minimum_reply_interval(cancel: &AtomicBool) -> Result<()> {
-    const MIN_REPLY_INTERVAL_SECONDS: u64 = 10;
+fn wait_for_minimum_reply_interval(
+    cancel: &AtomicBool,
+    settings: &XAssistantTaskSettings,
+) -> Result<()> {
+    let minimum_interval_seconds = u64::from(settings.minimum_reply_interval_seconds.clamp(10, 120));
     let mut waiting_logged = false;
 
     loop {
@@ -413,12 +426,12 @@ fn wait_for_minimum_reply_interval(cancel: &AtomicBool) -> Result<()> {
         }
 
         match binance_tools::db::x_assistant::reply_min_interval_wait_seconds_blocking(
-            MIN_REPLY_INTERVAL_SECONDS + 1,
+            minimum_interval_seconds + 1,
         )? {
             Some(seconds) => {
                 if !waiting_logged {
                     automation::log_browser_event(&format!(
-                        "回复间隔保护已触发：两次成功回复至少间隔 {MIN_REPLY_INTERVAL_SECONDS} 秒，等待后继续。"
+                        "回复间隔保护已触发：两次成功回复至少间隔 {minimum_interval_seconds} 秒，等待后继续。"
                     ));
                     waiting_logged = true;
                 }
@@ -436,8 +449,7 @@ fn wait_for_minimum_reply_interval(cancel: &AtomicBool) -> Result<()> {
     }
 }
 
-fn ensure_daily_reply_capacity() -> Result<()> {
-    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
+fn ensure_daily_reply_capacity(settings: &XAssistantTaskSettings) -> Result<()> {
     let completed = binance_tools::db::x_assistant::today_sent_reply_count_blocking()?;
     let limit = u64::from(settings.daily_reply_limit);
     if completed >= limit {
@@ -457,7 +469,8 @@ pub fn run(options: VisionReplyOptions, cancel: &AtomicBool) -> Result<VisionRep
     anyhow::ensure!(options.auto_send, "全自动回复需要开启自动发送");
     anyhow::ensure!(!options.hover_only, "全自动回复不能使用仅移动模式");
 
-    AutoReplyRunner::default().run(options, cancel, None)
+    let settings = binance_tools::db::x_posting::load_task_settings_blocking()?;
+    AutoReplyRunner::default().run(options, cancel, settings, None)
 }
 
 /// 自动化联动入口：从启动后累计每 10 轮回复，交出一次浏览器操作权给自动发帖。
@@ -466,6 +479,7 @@ pub fn run_with_post_scheduler(
     cancel: &AtomicBool,
     post_turn_sender: SyncSender<()>,
     post_turn_receiver: Receiver<bool>,
+    settings: XAssistantTaskSettings,
 ) -> Result<VisionReplyResult> {
     anyhow::ensure!(options.auto_send, "全自动回复需要开启自动发送");
     anyhow::ensure!(!options.hover_only, "全自动回复不能使用仅移动模式");
@@ -473,6 +487,7 @@ pub fn run_with_post_scheduler(
     AutoReplyRunner::default().run(
         options,
         cancel,
+        settings,
         Some((post_turn_sender, post_turn_receiver)),
     )
 }
