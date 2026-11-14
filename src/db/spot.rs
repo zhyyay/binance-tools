@@ -70,13 +70,21 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
     // 只持久化已收盘 K 线；后续扫描仅在最新收盘日线落后时增量补齐。
     let missing_symbols = list_usdt_symbols_missing_daily_klines(&connection, days)?;
     for symbol in missing_symbols {
-        let fetch_limit = days.saturating_add(1).min(1000);
+        let now = current_time_millis();
+        let cached = list_spot_daily_klines(&connection, &symbol, 1000)?;
+        let closed_count = cached.iter().filter(|kline| kline.close_time < now).count();
+        let has_unfinished = cached.iter().any(|kline| kline.close_time >= now);
+        // 首次建库或旧缓存缺少历史样本时补足 120 根；正常每日更新只拉最近两根。
+        let fetch_limit = if cached.is_empty() || (closed_count < days as usize && has_unfinished) {
+            days.saturating_add(1).min(1000)
+        } else {
+            2
+        };
         let klines = crate::binance::spot::fetch_spot_daily_klines_blocking(
             settings.clone(),
             &symbol,
             fetch_limit,
         )?;
-        let now = current_time_millis();
         connection
             .execute(
                 "DELETE FROM spot_klines_1d WHERE symbol = ?1 AND interval = ?2 AND close_time >= ?3",
