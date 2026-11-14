@@ -293,7 +293,7 @@ impl Dashboard {
         &mut self,
         _: &Entity<SpotAiAnalysisPage>,
         event: &SpotAiAnalysisEvent,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
