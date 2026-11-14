@@ -342,7 +342,15 @@ fn should_remember_missing_archive(
     today: chrono::NaiveDate,
 ) -> bool {
     if job.archive_type == "monthly" {
-        return true;
+        let Ok(month_start) =
+            chrono::NaiveDate::parse_from_str(&format!("{}-01", job.period), "%Y-%m-%d")
+        else {
+            return false;
+        };
+        let Some(next_month) = month_start.checked_add_months(Months::new(1)) else {
+            return false;
+        };
+        return first_monday_of_month(next_month) < today - ChronoDuration::days(2);
     }
 
     chrono::NaiveDate::parse_from_str(&job.period, "%Y-%m-%d")
