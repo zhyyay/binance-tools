@@ -2,7 +2,7 @@ use crate::ui::palette;
 #[path = "table.rs"]
 mod table;
 use self::table::SpotAiAnalysisTableDelegate;
-use binance_tools::binance::market::MarketProduct;
+use binance_tools::binance::{BinanceSettings, market::MarketProduct};
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, Disableable, Sizable, StyledExt,
@@ -35,6 +35,9 @@ struct SpotAiAnalysisRow {
     total_score: f64,
     trend_label: String,
     basis: String,
+    ma120_average_price: Option<f64>,
+    ma120_difference_percent: Option<f64>,
+    ma120_samples: usize,
 }
 
 impl SpotAiAnalysisRow {
@@ -119,12 +122,32 @@ impl SpotAiAnalysisPage {
                         products.len()
                     );
 
-                    app_log::info!("[现货AI分析][扫描诊断] 2/4 开始读取 30 日日线均线缓存");
+                    app_log::info!("[现货AI分析][扫描诊断] 2/5 开始读取 30 日日线均线缓存");
                     let cached_ma = binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(30)
                         .unwrap_or_default();
                     app_log::info!(
-                        "[现货AI分析][扫描诊断] 2/4 均线缓存读取完成，记录数量={}",
+                        "[现货AI分析][扫描诊断] 2/5 30日均线缓存读取完成，记录数量={}",
                         cached_ma.len()
+                    );
+
+                    app_log::info!("[现货AI分析][扫描诊断] 开始检查并增量更新 120 日日线缓存");
+                    let cached_ma120 = match binance_tools::db::spot::load_or_fetch_usdt_daily_ma_signals_blocking(
+                        BinanceSettings::production(),
+                        120,
+                    ) {
+                        Ok(signals) => signals,
+                        Err(error) => {
+                            app_log::warn!(
+                                "[现货AI分析] MA120 日线更新失败，回退到本地缓存 error={:#}",
+                                error
+                            );
+                            binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(120)
+                                .unwrap_or_default()
+                        }
+                    };
+                    app_log::info!(
+                        "[现货AI分析][扫描诊断] MA120 读取/更新完成，具备完整样本的币种数量={}",
+                        cached_ma120.len()
                     );
 
                     app_log::info!("[现货AI分析][扫描诊断] 3/4 开始获取市场情绪");
@@ -135,7 +158,7 @@ impl SpotAiAnalysisPage {
                     );
 
                     app_log::info!("[现货AI分析][扫描诊断] 4/4 开始计算评分并构建表格数据");
-                    let rows = build_analysis_rows(products, &cached_ma, sentiment.as_ref());
+                    let rows = build_analysis_rows(products, &cached_ma, &cached_ma120, sentiment.as_ref());
                     app_log::info!(
                         "[现货AI分析][扫描诊断] 4/4 评分计算完成，候选行数={}",
                         rows.len()
@@ -326,7 +349,15 @@ impl SpotAiAnalysisPage {
                     .child(detail_stat_colored("24h 涨跌", format_signed_percent(row.product.price_change_percent), change_color(row.product.price_change_percent, theme), theme))
                     .child(detail_stat("最新价格", format_price(row.product.last_price), theme))
                     .child(detail_stat("24h 成交额", format_compact(row.product.quote_volume), theme))
-                    .child(detail_stat("24h 振幅", amplitude_percent(&row.product), theme)),
+                    .child(detail_stat("24h 振幅", amplitude_percent(&row.product), theme))
+                    .child(detail_stat_colored(
+                        "120日线位置",
+                        format_ma120_location(row.ma120_difference_percent),
+                        row.ma120_difference_percent
+                            .map(|value| change_color(Some(value), theme))
+                            .unwrap_or_else(|| palette::muted(theme)),
+                        theme,
+                    )),
             )
             .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("六维研究评分"))
             .children(dimensions.into_iter().map(|(label, score, explanation)| {
@@ -368,7 +399,7 @@ impl SpotAiAnalysisPage {
                     .text_size(px(11.))
                     .text_color(palette::muted(theme))
                     .line_height(px(17.))
-                    .child("第一版使用已有 24 小时行情与本地日线均线缓存；日线均价偏离是技术参考，不代表完整技术指标。成交额排名和振幅仅是流动性参考，不等于盘口深度。未取得的多周期指标、新闻情绪和盘口数据不会伪造，AI 报告会明确标记数据缺口。"),
+                    .child("使用已有 24 小时行情、30 日均线评分与 120 日均线位置参考；均线偏离是技术参考，不代表完整技术指标。成交额排名和振幅仅是流动性参考，不等于盘口深度。未取得的多周期指标、新闻情绪和盘口数据不会伪造，AI 报告会明确标记数据缺口。"),
             )
             .into_any_element()
     }
@@ -481,6 +512,7 @@ impl Render for SpotAiAnalysisPage {
 fn build_analysis_rows(
     products: Vec<MarketProduct>,
     cached_ma: &[binance_tools::binance::spot::DailyMaSignal],
+    cached_ma120: &[binance_tools::binance::spot::DailyMaSignal],
     sentiment: Option<&MarketSentiment>,
 ) -> Vec<SpotAiAnalysisRow> {
     let inputs = products.iter().map(|p| MarketSnapshot {
@@ -492,17 +524,32 @@ fn build_analysis_rows(
     let ma = cached_ma.iter().map(|s| DailyMaSnapshot {
         symbol:s.symbol.clone(), difference_percent:s.difference_percent, samples:s.samples,
     }).collect::<Vec<_>>();
+    let ma120 = cached_ma120.iter()
+        .map(|signal| (signal.symbol.as_str(), signal))
+        .collect::<HashMap<_, _>>();
     let scores = analyze_market_with_sentiment(&inputs,&ma,sentiment).into_iter()
         .map(|s|(s.symbol.clone(),s)).collect::<HashMap<_,_>>();
     let mut rows=products.into_iter().filter_map(|product| {
         let s=scores.get(&product.symbol)?;
+        let ma120_signal = ma120.get(product.symbol.as_str()).copied();
+        let ma120_average_price = ma120_signal.map(|signal| signal.average_price);
+        let ma120_samples = ma120_signal.map(|signal| signal.samples).unwrap_or(0);
+        let ma120_difference_percent = product.last_price
+            .zip(ma120_average_price)
+            .filter(|(_, average)| *average > 0.0)
+            .map(|(price, average)| (price - average) / average * 100.0);
+        let ma120_basis = ma120_difference_percent
+            .map(|difference| format!("120 日均线：均线价 {}，当前价偏离 {:+.2}%，有效收盘样本 {} 根。", format_price(ma120_average_price), difference, ma120_samples))
+            .unwrap_or_else(|| "120 日均线：数据不足，尚无完整的 120 根已收盘日线缓存。".to_string());
         Some(SpotAiAnalysisRow {
             product, trend_score:s.trend_score, volume_score:s.volume_score,
             technical_score:s.technical_score, risk_score:s.risk_score,
             sentiment_score:s.sentiment_score, sentiment_value:s.sentiment_value,
             sentiment_classification:s.sentiment_classification.clone(), sentiment_update_time:s.sentiment_update_time.clone(),
             liquidity_score:s.liquidity_score,
-            total_score:s.total_score, trend_label:s.trend_label.clone(), basis:s.basis.clone(),
+            total_score:s.total_score, trend_label:s.trend_label.clone(),
+            basis:format!("{} {}", s.basis, ma120_basis),
+            ma120_average_price, ma120_difference_percent, ma120_samples,
         })
     }).collect::<Vec<_>>();
     rows.sort_by(|a,b|b.total_score.partial_cmp(&a.total_score).unwrap_or(Ordering::Equal));
@@ -588,6 +635,15 @@ fn trend_color(label: &str, theme: &gpui_component::Theme) -> gpui::Hsla {
         theme.danger.opacity(0.95)
     } else {
         palette::text_strong(theme)
+    }
+}
+
+fn format_ma120_location(value: Option<f64>) -> String {
+    match value {
+        Some(value) if value > 1.0 => format!("线上 +{value:.2}%"),
+        Some(value) if value < -1.0 => format!("线下 {value:.2}%"),
+        Some(value) => format!("贴近 {value:+.2}%"),
+        None => "数据不足".to_string(),
     }
 }
 
