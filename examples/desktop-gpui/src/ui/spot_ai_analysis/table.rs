@@ -2,7 +2,8 @@ use super::{SpotAiAnalysisPage, SpotAiAnalysisRow};
 use crate::ui::palette;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, Sizable, StyledExt,
+    h_flex, v_flex,
     button::{Button, ButtonVariants},
     table::{Column, ColumnSort, TableDelegate, TableState},
 };
@@ -90,45 +91,79 @@ impl SpotAiAnalysisTableDelegate {
     fn name_cell(
         &self,
         row_ix: usize,
-        col_ix: usize,
+        _col_ix: usize,
         row: &SpotAiAnalysisRow,
         theme: &gpui_component::Theme,
     ) -> AnyElement {
-        self.select_cell(
-            row_ix,
-            col_ix,
-            row,
-            v_flex()
-                .size_full()
-                .justify_center()
-                .px_1()
-                .gap_0()
-                .child(
-                    h_flex()
-                        .w_full()
-                        .items_center()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .font_semibold()
-                                .text_color(palette::text_strong(theme))
-                                .child(row.product.base_asset.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(11.))
-                                .text_color(palette::muted(theme))
-                                .child(format!("/{}", row.product.quote_asset)),
-                        ),
-                )
-                .child(
-                    div()
-                        .text_size(px(10.))
-                        .text_color(palette::muted_soft(theme))
-                        .child(row.product.asset_name.clone()),
-                ),
-        )
+        let page_for_select = self.page.clone();
+        let symbol_for_select = row.product.symbol.clone();
+        let page_for_chart = self.page.clone();
+        let symbol_for_chart = row.product.symbol.clone();
+
+        h_flex()
+            .size_full()
+            .items_center()
+            .justify_between()
+            .gap_1()
+            .child(
+                Button::new(("spot-ai-row-name", row_ix))
+                    .ghost()
+                    .xsmall()
+                    .flex_1()
+                    .h_full()
+                    .child(
+                        v_flex()
+                            .size_full()
+                            .justify_center()
+                            .px_1()
+                            .gap_0()
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .font_semibold()
+                                            .text_color(palette::text_strong(theme))
+                                            .child(row.product.base_asset.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(palette::muted(theme))
+                                            .child(format!("/{}", row.product.quote_asset)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(palette::muted_soft(theme))
+                                    .child(row.product.asset_name.clone()),
+                            ),
+                    )
+                    .on_click(move |_, _, cx| {
+                        _ = page_for_select.update(cx, |this, cx| {
+                            this.select_symbol(symbol_for_select.clone(), cx);
+                        });
+                    }),
+            )
+            .child(
+                Button::new(("spot-ai-row-kline", row_ix))
+                    .ghost()
+                    .xsmall()
+                    .w(px(22.))
+                    .h(px(20.))
+                    .tooltip("查看 K 线图")
+                    .child(candlestick_icon(palette::muted(theme)))
+                    .on_click(move |_, _, cx| {
+                        _ = page_for_chart.update(cx, |_, cx| {
+                            cx.emit(super::SpotAiAnalysisEvent::OpenKline(symbol_for_chart.clone()));
+                        });
+                    }),
+            )
+            .into_any_element()
     }
 
 }
@@ -228,6 +263,54 @@ impl TableDelegate for SpotAiAnalysisTableDelegate {
     fn loading(&self, _: &App) -> bool {
         self.loading
     }
+}
+
+fn candlestick_icon(color: Hsla) -> AnyElement {
+    div()
+        .relative()
+        .w(px(16.))
+        .h(px(14.))
+        .child(
+            div()
+                .absolute()
+                .left(px(4.))
+                .top(px(0.))
+                .w(px(1.5))
+                .h(px(14.))
+                .bg(color),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(px(2.))
+                .top(px(3.))
+                .w(px(5.))
+                .h(px(8.))
+                .border_1()
+                .border_color(color)
+                .rounded(px(1.5)),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(px(10.))
+                .top(px(1.))
+                .w(px(1.5))
+                .h(px(12.))
+                .bg(color),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(px(8.))
+                .top(px(5.))
+                .w(px(5.))
+                .h(px(5.))
+                .border_1()
+                .border_color(color)
+                .rounded(px(1.5)),
+        )
+        .into_any_element()
 }
 
 fn format_ma120_location(value: Option<f64>) -> String {
