@@ -389,24 +389,95 @@ pub fn list_spot_daily_klines_blocking(
 }
 
 pub fn load_or_fetch_spot_daily_klines_blocking(
-    settings: BinanceSettings,
+    _settings: BinanceSettings,
     symbol: String,
     days: u16,
 ) -> anyhow::Result<Vec<SpotDailyKline>> {
     let days = days.clamp(1, 1000);
     let mut connection = super::open_default_connection()?;
-    let cached = list_spot_daily_klines(&connection, &symbol, days as usize)?;
-    if has_complete_daily_window(
-        cached.len(),
-        cached.last().map(|kline| kline.open_time),
-        days,
-    ) {
-        return Ok(cached);
+    let today = chrono::Utc::now().date_naive();
+    let start_date = today
+        .checked_sub_signed(ChronoDuration::days(i64::from(days) + 2))
+        .context("calculate single-symbol archive start date failed")?;
+    let current_month = today
+        .with_day(1)
+        .context("calculate current UTC month failed")?;
+    let mut month = start_date
+        .with_day(1)
+        .context("calculate single-symbol archive month failed")?;
+    let client = crate::binance::spot_archive::archive_http_client()?;
+    let now = current_time_millis();
+
+    while month <= current_month {
+        let next_month = month
+            .checked_add_months(Months::new(1))
+            .context("calculate next single-symbol archive month failed")?;
+        let monthly_available =
+            month < current_month && today >= first_monday_of_month(next_month);
+
+        if monthly_available {
+            let job = SpotDailyArchiveJob {
+                symbol: symbol.clone(),
+                archive_type: "monthly",
+                period: month.format("%Y-%m").to_string(),
+            };
+            import_one_spot_archive_if_needed(&connection, &mut connection, &client, &job, today, now)?;
+        } else {
+            let mut date = std::cmp::max(month, start_date);
+            let end_date = std::cmp::min(next_month, today);
+            while date < end_date {
+                let job = SpotDailyArchiveJob {
+                    symbol: symbol.clone(),
+                    archive_type: "daily",
+                    period: date.format("%Y-%m-%d").to_string(),
+                };
+                import_one_spot_archive_if_needed(&connection, &mut connection, &client, &job, today, now)?;
+                date = date
+                    .succ_opt()
+                    .context("advance single-symbol archive date failed")?;
+            }
+        }
+
+        month = next_month;
     }
 
-    let klines = crate::binance::spot::fetch_spot_daily_klines_blocking(settings, &symbol, days)?;
-    upsert_spot_daily_klines(&mut connection, &klines)?;
     list_spot_daily_klines(&connection, &symbol, days as usize)
+}
+
+fn import_one_spot_archive_if_needed(
+    connection: &Connection,
+    write_connection: &mut Connection,
+    client: &reqwest::blocking::Client,
+    job: &SpotDailyArchiveJob,
+    today: chrono::NaiveDate,
+    now: i64,
+) -> anyhow::Result<()> {
+    if !should_download_spot_archive(connection, job, today)? {
+        return Ok(());
+    }
+
+    match crate::binance::spot_archive::download_spot_daily_klines_zip(
+        client,
+        &job.symbol,
+        job.archive_type,
+        &job.period,
+    )? {
+        Some(klines) => {
+            let closed_klines = klines
+                .into_iter()
+                .filter(|kline| kline.close_time < now)
+                .collect::<Vec<_>>();
+            upsert_spot_daily_klines(write_connection, &closed_klines)?;
+            mark_spot_archive_import(connection, job, "imported")?;
+        }
+        None => {
+            if should_remember_missing_archive(job, today) {
+                mark_spot_archive_import(connection, job, "missing")?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub fn list_spot_symbols(connection: &Connection) -> anyhow::Result<Vec<SpotSymbolInfo>> {
