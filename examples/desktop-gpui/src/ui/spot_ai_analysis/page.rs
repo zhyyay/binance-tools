@@ -317,7 +317,7 @@ impl SpotAiAnalysisPage {
                             .text_color(palette::text(theme))
                             .child(format!("{label} ⓘ"))
                             .tooltip(move |_, cx| {
-                                cx.new(|_| Tooltip::new(explanation))
+                                cx.new(|_| Tooltip::new(explanation)).into()
                             }),
                     )
                     .child(
