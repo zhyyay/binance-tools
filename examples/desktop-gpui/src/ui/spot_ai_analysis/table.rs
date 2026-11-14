@@ -21,12 +21,12 @@ impl SpotAiAnalysisTableDelegate {
     pub(super) fn new(page: WeakEntity<SpotAiAnalysisPage>) -> Self {
         Self {
             columns: vec![
-                Column::new("symbol", "名称").width(px(174.)).fixed_left().sortable(),
-                Column::new("change", "24h 涨跌").width(px(90.)).sortable(),
-                Column::new("trend", "趋势判断").width(px(100.)).sortable(),
-                Column::new("turnover", "24h 成交额").width(px(110.)).sortable(),
-                Column::new("ma120", "120日线位置").width(px(112.)).sortable(),
-                Column::new("score", "综合评分").width(px(82.)).sortable()
+                Column::new("symbol", "名称").width(px(190.)).fixed_left().sortable(),
+                Column::new("change", "24h 涨跌").width(px(112.)).sortable(),
+                Column::new("trend", "趋势判断").width(px(96.)).sortable(),
+                Column::new("turnover", "24h 成交额").width(px(140.)).sortable(),
+                Column::new("ma120", "120日线位置").width(px(132.)).sortable(),
+                Column::new("score", "综合评分").width(px(90.)).sortable()
             ],
             rows: Vec::new(),
             loading: false,
