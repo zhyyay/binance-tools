@@ -59,7 +59,7 @@ pub fn download_spot_daily_klines_zip(
 
     let mut archive = ZipArchive::new(Cursor::new(bytes))
         .with_context(|| format!("open Binance kline ZIP failed: {url}"))?;
-    if archive.is_empty() {
+    if archive.len() == 0 {
         bail!("Binance kline ZIP contains no files: {url}");
     }
 
