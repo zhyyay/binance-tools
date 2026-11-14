@@ -139,7 +139,6 @@ impl SpotAiAnalysisTableDelegate {
                             .child(
                                 div()
                                     .w_full()
-                                    .overflow_hidden()
                                     .text_size(px(10.))
                                     .text_color(palette::text(theme))
                                     .child(row.product.asset_name.clone()),
