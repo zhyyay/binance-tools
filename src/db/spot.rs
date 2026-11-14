@@ -127,6 +127,19 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
                         });
                     }
 
+                    if attempt == 3 && error_message.contains("429") {
+                        app_log::error!(
+                            "[Binance][现货] HTTP 429 重试后仍被限流，立即结束本轮 MA{} 补齐；已写入的数据保留，稍后重新扫描即可继续：symbol={} attempt={}/3 error={}",
+                            days,
+                            symbol,
+                            attempt,
+                            error_message
+                        );
+                        return Err(error).with_context(|| {
+                            format!("Binance rate limit persisted while fetching daily klines: {symbol}")
+                        });
+                    }
+
                     if attempt == 3 {
                         app_log::warn!(
                             "[Binance][现货] MA{} 日线拉取失败，跳过当前交易对并保留已完成数据：symbol={} attempt={}/3 error={}",
