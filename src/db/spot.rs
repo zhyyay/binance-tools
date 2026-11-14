@@ -73,11 +73,12 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
         let now = current_time_millis();
         let cached = list_spot_daily_klines(&connection, &symbol, 1000)?;
         let closed_count = cached.iter().filter(|kline| kline.close_time < now).count();
-        let has_unfinished = cached.iter().any(|kline| kline.close_time >= now);
         // 首次建库或旧缓存缺少历史样本时补足 120 根；正常每日更新只拉最近两根。
-        let fetch_limit = if cached.is_empty() || (closed_count < days as usize && has_unfinished) {
+        let fetch_limit = if closed_count < days as usize {
+            // 无论旧缓存是否存在未收盘 K 线，只要已收盘样本不足，就重新补齐历史窗口。
             days.saturating_add(1).min(1000)
         } else {
+            // 已有完整历史样本时，只拉最近两根用于日更和补齐最新收盘日线。
             2
         };
         let klines = crate::binance::spot::fetch_spot_daily_klines_blocking(
@@ -575,10 +576,8 @@ pub fn list_usdt_symbols_missing_daily_klines(
                 AND (
                     k.latest_open_time IS NULL
                     OR k.latest_open_time < ?3
-                    OR (
-                        COALESCE(k.closed_count, 0) < ?4
-                        AND unfinished.symbol IS NOT NULL
-                    )
+                    OR COALESCE(k.closed_count, 0) < ?4
+                    OR unfinished.symbol IS NOT NULL
                 )
             ORDER BY s.symbol
             "#
