@@ -253,7 +253,7 @@ impl MarketHeatmapPage {
         let size = tile_size(share);
         let symbol = product.symbol.clone();
         let text_color = hsla(0.0, 0.0, 1.0, 1.0);
-        let accent = tile_color(change, &product.symbol);
+        let accent = tile_color(change, index);
         let display_symbol = if size.compact {
             product.base_asset.clone()
         } else {
@@ -656,29 +656,37 @@ fn weight_share(weight: f64, total_weight: f64) -> f64 {
     }
 }
 
-/// 同方向的相邻交易对使用轻微不同的明度，保持涨跌色相，同时让无间距矩形仍可辨认。
-fn tile_color(change: f64, symbol: &str) -> Hsla {
-    let hash = symbol.bytes().fold(2166136261u32, |hash, byte| {
-        (hash ^ u32::from(byte)).wrapping_mul(16777619)
-    });
-    let shade = match hash % 5 {
-        0 => -0.045,
-        1 => -0.022,
-        2 => 0.0,
-        3 => 0.022,
-        _ => 0.045,
-    };
-
+/// 使用稳定的分组色板区分相邻矩形：涨跌方向由色相表达，
+/// 同方向内部通过明度和饱和度拉开层次，避免随机颜色造成杂乱。
+fn tile_color(change: f64, index: usize) -> Hsla {
+    let variant = index % 6;
     if change > 0.0 {
-        let lightness = (0.52 + (change.abs().min(15.0) / 15.0) * 0.08 + shade)
-            .clamp(0.42, 0.68) as f32;
-        hsla(0.42, 0.50, lightness, 1.0)
+        match variant {
+            0 => hsla(0.42, 0.58, 0.48, 1.0),
+            1 => hsla(0.40, 0.52, 0.54, 1.0),
+            2 => hsla(0.44, 0.62, 0.45, 1.0),
+            3 => hsla(0.39, 0.48, 0.50, 1.0),
+            4 => hsla(0.46, 0.55, 0.47, 1.0),
+            _ => hsla(0.41, 0.66, 0.52, 1.0),
+        }
     } else if change < 0.0 {
-        let lightness = (0.61 + (change.abs().min(15.0) / 15.0) * 0.06 + shade)
-            .clamp(0.50, 0.74) as f32;
-        hsla(0.98, 0.78, lightness, 1.0)
+        match variant {
+            0 => hsla(0.985, 0.76, 0.54, 1.0),
+            1 => hsla(0.965, 0.70, 0.59, 1.0),
+            2 => hsla(0.995, 0.82, 0.49, 1.0),
+            3 => hsla(0.975, 0.68, 0.52, 1.0),
+            4 => hsla(0.955, 0.78, 0.56, 1.0),
+            _ => hsla(0.005, 0.72, 0.50, 1.0),
+        }
     } else {
-        hsla(0.42, 0.18, (0.56 + shade).clamp(0.48, 0.64) as f32, 1.0)
+        match variant {
+            0 => hsla(0.58, 0.12, 0.48, 1.0),
+            1 => hsla(0.58, 0.10, 0.54, 1.0),
+            2 => hsla(0.58, 0.14, 0.44, 1.0),
+            3 => hsla(0.58, 0.08, 0.50, 1.0),
+            4 => hsla(0.58, 0.12, 0.56, 1.0),
+            _ => hsla(0.58, 0.16, 0.46, 1.0),
+        }
     }
 }
 
