@@ -141,7 +141,7 @@ impl SpotAiAnalysisTableDelegate {
                                     .w_full()
                                     .text_size(px(10.))
                                     .text_color(palette::text(theme))
-                                    .child(row.product.asset_name.clone()),
+                                    .child(truncate_asset_name(&row.product.asset_name, 9)),
                             ),
                     )
                     .on_click(move |_, _, cx| {
@@ -312,6 +312,16 @@ fn candlestick_icon(color: Hsla) -> AnyElement {
                 .rounded(px(1.5)),
         )
         .into_any_element()
+}
+
+fn truncate_asset_name(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let shortened = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{shortened}…")
+    } else {
+        shortened
+    }
 }
 
 fn format_ma120_location(value: Option<f64>) -> String {
