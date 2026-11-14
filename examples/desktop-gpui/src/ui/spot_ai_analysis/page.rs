@@ -48,6 +48,8 @@ pub struct SpotAiAnalysisPage {
     search_input: Entity<InputState>,
     rows: Vec<SpotAiAnalysisRow>,
     selected_symbol: Option<String>,
+    ma120_filter: String,
+    ma120_filter_open: bool,
     error: Option<String>,
     loading: bool,
     scanned_count: usize,
@@ -76,6 +78,8 @@ impl SpotAiAnalysisPage {
             search_input,
             rows: Vec::new(),
             selected_symbol: None,
+            ma120_filter: "全部".to_string(),
+            ma120_filter_open: false,
             error: None,
             loading: false,
             scanned_count: 0,
@@ -204,16 +208,31 @@ impl SpotAiAnalysisPage {
         cx.notify();
     }
 
+    fn set_ma120_filter(&mut self, filter: String, cx: &mut Context<Self>) {
+        self.ma120_filter = filter;
+        self.ma120_filter_open = false;
+        self.refresh_visible_rows(cx);
+        cx.notify();
+    }
+
     fn refresh_visible_rows(&mut self, cx: &mut Context<Self>) {
         let query = self.search_input.read(cx).value().trim().to_lowercase();
+        let ma120_filter = self.ma120_filter.clone();
         let rows = self
             .rows
             .iter()
             .filter(|row| {
-                query.is_empty()
+                let matches_query = query.is_empty()
                     || row.product.symbol.to_lowercase().contains(&query)
                     || row.product.base_asset.to_lowercase().contains(&query)
-                    || row.product.asset_name.to_lowercase().contains(&query)
+                    || row.product.asset_name.to_lowercase().contains(&query);
+                let matches_ma120 = match ma120_filter.as_str() {
+                    "线上" => row.ma120_difference_percent.is_some_and(|v| v > 1.0),
+                    "趋近" => row.ma120_difference_percent.is_some_and(|v| (-1.0..=1.0).contains(&v)),
+                    "线下" => row.ma120_difference_percent.is_some_and(|v| v < -1.0),
+                    _ => true,
+                };
+                matches_query && matches_ma120
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -340,7 +359,12 @@ impl SpotAiAnalysisPage {
             )
             .child(div().h(px(1.)).bg(palette::border(theme)))
             .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("行情摘要"))
-            .child(detail_stat_colored("恐惧与贪婪指数", format!("{:.0} · {}", row.sentiment_value, row.sentiment_classification), score_color(row.sentiment_value, theme), theme))
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(detail_stat_colored("综合评分", format!("{:.0} / 100", row.total_score), score_color(row.total_score, theme), theme))
+                    .child(detail_stat_colored("恐惧与贪婪", format!("{:.0} · {}", row.sentiment_value, row.sentiment_classification), score_color(row.sentiment_value, theme), theme))
+            )
             .child(div().text_size(px(10.)).text_color(palette::muted(theme)).child(format!("CoinMarketCap · 北京时间 {}", format_beijing_time(&row.sentiment_update_time))))
             .child(
                 h_flex()
@@ -401,6 +425,18 @@ impl SpotAiAnalysisPage {
                     .text_color(palette::muted(theme))
                     .line_height(px(17.))
                     .child("使用已有 24 小时行情、30 日均线评分与 120 日均线位置参考；均线偏离是技术参考，不代表完整技术指标。成交额排名和振幅仅是流动性参考，不等于盘口深度。未取得的多周期指标、新闻情绪和盘口数据不会伪造，AI 报告会明确标记数据缺口。"),
+            )
+            .child(div().h(px(1.)).bg(palette::border(theme)))
+            .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("初步结论"))
+            .child(
+                div()
+                    .p_2()
+                    .rounded(px(6.))
+                    .bg(score_color(row.total_score, theme).opacity(0.08))
+                    .text_size(px(12.))
+                    .text_color(palette::text_strong(theme))
+                    .line_height(px(18.))
+                    .child(preliminary_conclusion(row)),
             )
             .into_any_element()
     }
@@ -472,7 +508,52 @@ impl Render for SpotAiAnalysisPage {
                                     .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child(format!("当前显示 {} 个", visible_count)))
                                     .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("评分由本地行情规则计算")),
                             )
-                            .child(div().w(px(280.)).max_w(px(340.)).child(Input::new(&self.search_input).small().cleanable(true))),
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(div().w(px(280.)).max_w(px(340.)).child(Input::new(&self.search_input).small().cleanable(true)))
+                                    .child(
+                                        v_flex()
+                                            .relative()
+                                            .child(
+                                                Button::new("spot-ai-ma120-filter")
+                                                    .outline()
+                                                    .xsmall()
+                                                    .label(format!("120日线：{} ▾", self.ma120_filter))
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        this.ma120_filter_open = !this.ma120_filter_open;
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            .when(self.ma120_filter_open, |this| {
+                                                this.child(
+                                                    v_flex()
+                                                        .absolute()
+                                                        .top(px(28.))
+                                                        .right_0()
+                                                        .w(px(116.))
+                                                        .p_1()
+                                                        .gap_1()
+                                                        .rounded(px(6.))
+                                                        .bg(palette::surface_strong(theme))
+                                                        .border_1()
+                                                        .border_color(palette::border(theme))
+                                                        .shadow_lg()
+                                                        .children(["全部", "线上", "趋近", "线下"].into_iter().map(|filter| {
+                                                            let selected = self.ma120_filter == filter;
+                                                            Button::new(SharedString::from(format!("spot-ai-ma120-option-{filter}")))
+                                                                .ghost()
+                                                                .xsmall()
+                                                                .w_full()
+                                                                .label(filter)
+                                                                .when(selected, |button| button.bg(theme.primary.opacity(0.14)).text_color(palette::text_strong(theme)))
+                                                                .on_click(cx.listener(move |this, _, _, cx| this.set_ma120_filter(filter.to_string(), cx)))
+                                                        })),
+                                                )
+                                            }),
+                                    ),
+                            ),
                     ),
             )
             .when_some(self.error.clone(), |parent, error| {
@@ -535,8 +616,9 @@ fn build_analysis_rows(
         let ma120_signal = ma120.get(product.symbol.as_str()).copied();
         let ma120_average_price = ma120_signal.map(|signal| signal.average_price);
         let ma120_samples = ma120_signal.map(|signal| signal.samples).unwrap_or(0);
-        let ma120_difference_percent = product.last_price
-            .zip(ma120_average_price)
+        let ma120_difference_percent = ma120_signal
+            .filter(|signal| signal.samples >= 120)
+            .and_then(|signal| product.last_price.zip(Some(signal.average_price)))
             .filter(|(_, average)| *average > 0.0)
             .map(|(price, average)| (price - average) / average * 100.0);
         let ma120_basis = ma120_difference_percent
@@ -644,8 +726,27 @@ fn format_ma120_location(value: Option<f64>) -> String {
         Some(value) if value > 1.0 => format!("线上 +{value:.2}%"),
         Some(value) if value < -1.0 => format!("线下 {value:.2}%"),
         Some(value) => format!("贴近 {value:+.2}%"),
-        None => "数据不足".to_string(),
+        None => String::new(),
     }
+}
+
+fn preliminary_conclusion(row: &SpotAiAnalysisRow) -> String {
+    let score = if row.total_score >= 70.0 {
+        "综合评分较高，当前市场表现相对突出"
+    } else if row.total_score >= 55.0 {
+        "综合表现中性偏好，仍需观察后续走势"
+    } else if row.total_score >= 40.0 {
+        "综合表现一般，暂时缺少明显优势"
+    } else {
+        "综合评分偏低，当前需要重点关注风险"
+    };
+    let ma = match row.ma120_difference_percent {
+        Some(v) if v > 1.0 => "价格位于120日均线上方",
+        Some(v) if v < -1.0 => "价格位于120日均线下方",
+        Some(_) => "价格接近120日均线",
+        None => "120日均线样本不足，不纳入结论",
+    };
+    format!("{}；短期趋势为{}；{}。以上仅为行情数据初步筛选，不构成投资建议。", score, row.trend_label, ma)
 }
 
 fn format_signed_percent(value: Option<f64>) -> String {
