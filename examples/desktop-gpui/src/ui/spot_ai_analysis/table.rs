@@ -138,9 +138,12 @@ impl SpotAiAnalysisTableDelegate {
                             )
                             .child(
                                 div()
+                                    .w_full()
+                                    .overflow_hidden()
                                     .text_size(px(10.))
                                     .text_color(palette::muted_soft(theme))
-                                    .child(row.product.asset_name.clone()),
+                                    .child(row.product.asset_name.chars().take(12).collect::<String>()
+                                        + if row.product.asset_name.chars().count() > 12 { "…" } else { "" }),
                             ),
                     )
                     .on_click(move |_, _, cx| {
