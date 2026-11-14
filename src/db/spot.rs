@@ -103,7 +103,7 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
         };
 
         let mut fetched_klines = None;
-        for attempt in 1..=3 {
+        for attempt in 1_u32..=3 {
             match crate::binance::spot::fetch_spot_daily_klines_blocking(
                 settings.clone(),
                 &symbol,
