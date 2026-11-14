@@ -431,7 +431,7 @@ pub fn load_or_fetch_spot_daily_klines_blocking(
                     archive_type: "daily",
                     period: date.format("%Y-%m-%d").to_string(),
                 };
-                import_one_spot_archive_if_needed(&connection, &mut connection, &client, &job, today, now)?;
+                import_one_spot_archive_if_needed(&mut connection, &client, &job, today, now)?;
                 date = date
                     .succ_opt()
                     .context("advance single-symbol archive date failed")?;
