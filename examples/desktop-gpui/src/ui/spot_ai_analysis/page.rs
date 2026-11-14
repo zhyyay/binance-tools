@@ -268,11 +268,10 @@ impl SpotAiAnalysisPage {
 
         v_flex()
             .flex_1()
-            .min_w(px(320.))
+            .min_w(px(340.))
             .h_full()
             .overflow_y_scrollbar()
-            .justify_between()
-            .gap_3()
+            .gap_4()
             .p_4()
             .rounded(px(8.))
             .bg(palette::surface_strong(theme))
@@ -308,22 +307,26 @@ impl SpotAiAnalysisPage {
             .child(div().text_size(px(10.)).text_color(palette::muted(theme)).child(format!("CoinMarketCap · 北京时间 {}", format_beijing_time(&row.sentiment_update_time))))
             .child(
                 v_flex()
-                    .gap_2()
+                    .w_full()
+                    .gap_3()
                     .child(
                         h_flex()
-                            .gap_2()
+                            .w_full()
+                            .gap_3()
                             .child(detail_stat_colored("24h 涨跌", format_signed_percent(row.product.price_change_percent), change_color(row.product.price_change_percent, theme), theme))
                             .child(detail_stat("最新价格", format_price(row.product.last_price), theme))
                     )
                     .child(
                         h_flex()
-                            .gap_2()
+                            .w_full()
+                            .gap_3()
                             .child(detail_stat("24h 成交额", format_compact(row.product.quote_volume), theme))
                             .child(detail_stat("24h 振幅", amplitude_percent(&row.product), theme))
                     )
                     .child(
                         h_flex()
-                            .gap_2()
+                            .w_full()
+                            .gap_3()
                             .child(detail_stat("120日均线价", format_price(row.ma120_average_price), theme))
                             .child(detail_stat_colored(
                                 "120日线位置",
@@ -339,7 +342,7 @@ impl SpotAiAnalysisPage {
             .children(dimensions.into_iter().map(|(label, score, explanation)| {
                 h_flex()
                     .items_center()
-                    .gap_2()
+                    .gap_3()
                     .child(
                         div()
                             .id(label)
@@ -522,8 +525,8 @@ impl Render for SpotAiAnalysisPage {
                     .gap_3()
                     .child(
                         v_flex()
-                            .flex_1()
-                            .min_w(px(400.))
+                            .w(px(780.))
+                            .min_w(px(780.))
                             .h_full()
                             .overflow_hidden()
                             .child(
