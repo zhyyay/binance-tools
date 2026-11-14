@@ -77,6 +77,12 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
             fetch_limit,
         )?;
         let now = current_time_millis();
+        connection
+            .execute(
+                "DELETE FROM spot_klines_1d WHERE symbol = ?1 AND interval = ?2 AND close_time >= ?3",
+                params![symbol, DAILY_INTERVAL, now],
+            )
+            .with_context(|| format!("remove unfinished daily kline failed: {symbol}"))?;
         let closed_klines = klines
             .into_iter()
             .filter(|kline| kline.close_time < now)
@@ -531,7 +537,7 @@ pub fn list_usdt_symbols_missing_daily_klines(
     connection: &Connection,
     days: u16,
 ) -> anyhow::Result<Vec<String>> {
-    let _days = days.clamp(1, 1000);
+    let days = days.clamp(1, 1000);
     let now = current_time_millis();
     let expected_latest_open_time = today_utc_open_time_millis() - DAY_MILLIS;
     let mut statement = connection
@@ -540,18 +546,31 @@ pub fn list_usdt_symbols_missing_daily_klines(
             SELECT s.symbol
             FROM spot_symbols s
             LEFT JOIN (
-                SELECT symbol, MAX(open_time) AS latest_open_time
+                SELECT
+                    symbol,
+                    MAX(open_time) AS latest_open_time,
+                    COUNT(*) AS closed_count
                 FROM spot_klines_1d
                 WHERE interval = ?1
                     AND close_time < ?2
                 GROUP BY symbol
             ) k ON k.symbol = s.symbol
+            LEFT JOIN (
+                SELECT DISTINCT symbol
+                FROM spot_klines_1d
+                WHERE interval = ?1
+                    AND close_time >= ?2
+            ) unfinished ON unfinished.symbol = s.symbol
             WHERE s.quote_asset = 'USDT'
                 AND s.status = 'TRADING'
                 AND s.spot_trading_allowed = 1
                 AND (
                     k.latest_open_time IS NULL
                     OR k.latest_open_time < ?3
+                    OR (
+                        COALESCE(k.closed_count, 0) < ?4
+                        AND unfinished.symbol IS NOT NULL
+                    )
                 )
             ORDER BY s.symbol
             "#
@@ -559,9 +578,10 @@ pub fn list_usdt_symbols_missing_daily_klines(
         .context("prepare missing USDT daily kline SQL failed")?;
 
     let symbols = statement
-        .query_map(params![DAILY_INTERVAL, now, expected_latest_open_time], |row| {
-            row.get::<_, String>(0)
-        })
+        .query_map(
+            params![DAILY_INTERVAL, now, expected_latest_open_time, i64::from(days)],
+            |row| row.get::<_, String>(0),
+        )
         .context("query missing USDT daily kline symbols failed")?
         .collect::<Result<Vec<_>, _>>()
         .context("read missing USDT daily kline symbol rows failed")?;
