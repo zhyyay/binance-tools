@@ -5,7 +5,6 @@ use gpui_component::{
     ActiveTheme, Sizable, StyledExt,
     h_flex, v_flex,
     button::{Button, ButtonVariants},
-    tooltip::Tooltip,
     table::{Column, ColumnSort, TableDelegate, TableState},
 };
 use std::cmp::Ordering;
