@@ -7,9 +7,14 @@ use crate::binance::{
 };
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, params};
+use chrono::{Datelike, Duration as ChronoDuration, Months};
 use std::{
-    thread::sleep,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
+        mpsc,
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const ORDER_TYPES_SEPARATOR: &str = ",";
@@ -62,166 +67,309 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
     let days = days.clamp(1, 1000);
     let mut connection = super::open_default_connection()?;
     if list_spot_symbols(&connection)?.is_empty() {
-        let symbols = crate::binance::spot::fetch_spot_symbols_blocking(settings.clone())?;
+        let symbols = crate::binance::spot::fetch_spot_symbols_blocking(settings)?;
         replace_spot_symbols(&mut connection, &symbols)?;
     }
 
-    // 多取一根，确保即使 Binance 返回当前未收盘日线，也有足够的已收盘日线。
-    // 只持久化已收盘 K 线；后续扫描仅在最新收盘日线落后时增量补齐。
-    let missing_symbols = list_usdt_symbols_missing_daily_klines(&connection, days)?;
-    let total_symbols = missing_symbols.len();
-    let mut completed_symbols = 0usize;
-    let mut failed_symbols = 0usize;
+    let symbols = list_spot_symbols(&connection)?
+        .into_iter()
+        .filter(|symbol| {
+            symbol.quote_asset == "USDT"
+                && symbol.status == "TRADING"
+                && symbol.spot_trading_allowed
+        })
+        .map(|symbol| symbol.symbol)
+        .collect::<Vec<_>>();
+    let today = chrono::Utc::now().date_naive();
+    let start_date = today
+        .checked_sub_signed(ChronoDuration::days(i64::from(days) + 2))
+        .context("calculate MA archive start date failed")?;
+    let mut jobs = Vec::new();
 
-    app_log::info!(
-        "[Binance][现货] MA{} 日线补齐开始：待处理交易对={}，采用逐个请求、分批暂停、失败重试",
-        days,
-        total_symbols
-    );
+    // 已发布的完整月份使用一个月度 ZIP；尚未发布月度 ZIP 的日期使用每日 ZIP。
+    // Binance 月度归档在次月第一个星期一发布，因此不能提前把尚未发布的月份标记为缺失。
+    let mut month = start_date
+        .with_day(1)
+        .context("calculate MA archive month failed")?;
+    let current_month = today
+        .with_day(1)
+        .context("calculate current UTC month failed")?;
 
-    for (index, symbol) in missing_symbols.into_iter().enumerate() {
-        let now = current_time_millis();
-        let cached = list_spot_daily_klines(&connection, &symbol, 1000)?;
-        let closed_open_times = cached
-            .iter()
-            .filter(|kline| kline.close_time < now)
-            .map(|kline| kline.open_time)
-            .collect::<Vec<_>>();
-        let closed_count = closed_open_times.len();
-        let earliest_open_time = closed_open_times.iter().copied().min();
-        let needs_historical_backfill = closed_count < days as usize
-            && earliest_open_time
-                .map(|open_time| open_time < now - i64::from(days) * DAY_MILLIS)
-                .unwrap_or(true);
+    while month <= current_month {
+        let next_month = month
+            .checked_add_months(Months::new(1))
+            .context("calculate next archive month failed")?;
+        let release_date = first_monday_of_month(next_month);
+        let monthly_available = month < current_month && today >= release_date;
 
-        // 历史数据明显不完整时补齐 MA 窗口；新上市且历史长度不足 days 的币种，
-        // 只做最近两根日线增量更新，避免每次扫描都重复请求 121 根。
-        let fetch_limit = if needs_historical_backfill {
-            days.saturating_add(1).min(1000)
+        if monthly_available {
+            let period = month.format("%Y-%m").to_string();
+            for symbol in &symbols {
+                let job = SpotDailyArchiveJob {
+                    symbol: symbol.clone(),
+                    archive_type: "monthly",
+                    period: period.clone(),
+                };
+                if should_download_spot_archive(&connection, &job, today)? {
+                    jobs.push(job);
+                }
+            }
         } else {
-            2
-        };
-
-        let mut fetched_klines = None;
-        for attempt in 1_u32..=3 {
-            match crate::binance::spot::fetch_spot_daily_klines_blocking(
-                settings.clone(),
-                &symbol,
-                fetch_limit,
-            ) {
-                Ok(klines) => {
-                    fetched_klines = Some(klines);
-                    break;
-                }
-                Err(error) => {
-                    let error_message = format!("{:#}", error);
-                    if error_message.contains("418") {
-                        app_log::error!(
-                            "[Binance][现货] 检测到 HTTP 418，立即停止本轮 MA{} 请求以避免扩大限制：symbol={} error={}",
-                            days,
-                            symbol,
-                            error_message
-                        );
-                        return Err(error).with_context(|| {
-                            format!("Binance returned HTTP 418 while fetching daily klines: {symbol}")
-                        });
-                    }
-
-                    if attempt == 3 && error_message.contains("429") {
-                        app_log::error!(
-                            "[Binance][现货] HTTP 429 重试后仍被限流，立即结束本轮 MA{} 补齐；已写入的数据保留，稍后重新扫描即可继续：symbol={} attempt={}/3 error={}",
-                            days,
-                            symbol,
-                            attempt,
-                            error_message
-                        );
-                        return Err(error).with_context(|| {
-                            format!("Binance rate limit persisted while fetching daily klines: {symbol}")
-                        });
-                    }
-
-                    if attempt == 3 {
-                        app_log::warn!(
-                            "[Binance][现货] MA{} 日线拉取失败，跳过当前交易对并保留已完成数据：symbol={} attempt={}/3 error={}",
-                            days,
-                            symbol,
-                            attempt,
-                            error_message
-                        );
-                        break;
-                    }
-
-                    let delay = if error_message.contains("429") {
-                        Duration::from_secs(5 * u64::from(attempt))
-                    } else {
-                        Duration::from_millis(500 * (1_u64 << (attempt - 1)))
+            let mut date = std::cmp::max(month, start_date);
+            let end_date = std::cmp::min(next_month, today);
+            while date < end_date {
+                let period = date.format("%Y-%m-%d").to_string();
+                for symbol in &symbols {
+                    let job = SpotDailyArchiveJob {
+                        symbol: symbol.clone(),
+                        archive_type: "daily",
+                        period: period.clone(),
                     };
-                    app_log::warn!(
-                        "[Binance][现货] MA{} 日线请求失败，准备重试：symbol={} attempt={}/3 wait={}s error={}",
-                        days,
-                        symbol,
-                        attempt,
-                        delay.as_secs_f64(),
-                        error_message
-                    );
-                    sleep(delay);
+                    if should_download_spot_archive(&connection, &job, today)? {
+                        jobs.push(job);
+                    }
                 }
+                date = date
+                    .succ_opt()
+                    .context("advance daily archive date failed")?;
             }
         }
 
-        let Some(klines) = fetched_klines else {
-            failed_symbols += 1;
-            sleep(Duration::from_millis(400));
-            continue;
-        };
-
-        connection
-            .execute(
-                "DELETE FROM spot_klines_1d WHERE symbol = ?1 AND interval = ?2 AND close_time >= ?3",
-                params![symbol, DAILY_INTERVAL, now],
-            )
-            .with_context(|| format!("remove unfinished daily kline failed: {symbol}"))?;
-        let closed_klines = klines
-            .into_iter()
-            .filter(|kline| kline.close_time < now)
-            .collect::<Vec<_>>();
-        upsert_spot_daily_klines(&mut connection, &closed_klines)?;
-
-        if closed_klines.is_empty() {
-            failed_symbols += 1;
-            app_log::warn!(
-                "[Binance][现货] MA{} 日线请求成功但没有已收盘 K 线：symbol={}，下次扫描会继续检查",
-                days,
-                symbol
-            );
-        } else {
-            completed_symbols += 1;
-        }
-
-        if (index + 1) % 10 == 0 {
-            app_log::info!(
-                "[Binance][现货] MA{} 日线补齐进度：{}/{}，成功={}，失败/待重试={}",
-                days,
-                index + 1,
-                total_symbols,
-                completed_symbols,
-                failed_symbols
-            );
-            sleep(Duration::from_secs(1));
-        } else {
-            sleep(Duration::from_millis(400));
-        }
+        month = next_month;
     }
 
     app_log::info!(
-        "[Binance][现货] MA{} 日线补齐结束：总数={}，成功={}，失败/待重试={}",
+        "[Binance][现货] MA{} ZIP 日线导入开始：USDT交易对={}，待下载归档={}，并发数=4，历史数据源=data.binance.vision",
         days,
-        total_symbols,
-        completed_symbols,
-        failed_symbols
+        symbols.len(),
+        jobs.len()
     );
 
+    if !jobs.is_empty() {
+        let client = crate::binance::spot_archive::archive_http_client()?;
+        let jobs = Arc::new(jobs);
+        let next_job = AtomicUsize::new(0);
+        let stop_workers = AtomicBool::new(false);
+        let (sender, receiver) = mpsc::channel();
+
+        let mut imported_files = 0usize;
+        let mut missing_files = 0usize;
+        let mut failed_files = 0usize;
+        let mut imported_rows = 0usize;
+        let mut rate_limit_error = None;
+        let now = current_time_millis();
+
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let jobs = Arc::clone(&jobs);
+                let client = client.clone();
+                let sender = sender.clone();
+                let next_job = &next_job;
+                let stop_workers = &stop_workers;
+
+                scope.spawn(move || loop {
+                    if stop_workers.load(AtomicOrdering::Acquire) {
+                        break;
+                    }
+                    let index = next_job.fetch_add(1, AtomicOrdering::Relaxed);
+                    let Some(job) = jobs.get(index).cloned() else {
+                        break;
+                    };
+
+                    let result = crate::binance::spot_archive::download_spot_daily_klines_zip(
+                        &client,
+                        &job.symbol,
+                        job.archive_type,
+                        &job.period,
+                    );
+                    if let Err(error) = &result {
+                        let message = format!("{:#}", error);
+                        if message.contains("429") || message.contains("418") {
+                            stop_workers.store(true, AtomicOrdering::Release);
+                        }
+                    }
+                    if sender.send((job, result)).is_err() {
+                        break;
+                    }
+                });
+            }
+            drop(sender);
+
+            for (job, result) in receiver {
+                match result {
+                    Ok(Some(klines)) => {
+                        let closed_klines = klines
+                            .into_iter()
+                            .filter(|kline| kline.close_time < now)
+                            .collect::<Vec<_>>();
+                        if let Err(error) =
+                            upsert_spot_daily_klines(&mut connection, &closed_klines)
+                        {
+                            failed_files += 1;
+                            app_log::error!(
+                                "[Binance][现货] ZIP 日线入库失败：symbol={} type={} period={} error={:#}",
+                                job.symbol,
+                                job.archive_type,
+                                job.period,
+                                error
+                            );
+                            continue;
+                        }
+                        if let Err(error) = mark_spot_archive_import(
+                            &connection,
+                            &job,
+                            "imported",
+                        ) {
+                            failed_files += 1;
+                            app_log::error!(
+                                "[Binance][现货] ZIP 导入状态写入失败：symbol={} type={} period={} error={:#}",
+                                job.symbol,
+                                job.archive_type,
+                                job.period,
+                                error
+                            );
+                            continue;
+                        }
+                        imported_files += 1;
+                        imported_rows += closed_klines.len();
+                    }
+                    Ok(None) => {
+                        missing_files += 1;
+                        if should_remember_missing_archive(&job, today) {
+                            if let Err(error) =
+                                mark_spot_archive_import(&connection, &job, "missing")
+                            {
+                                failed_files += 1;
+                                app_log::warn!(
+                                    "[Binance][现货] ZIP 缺失状态写入失败：symbol={} type={} period={} error={:#}",
+                                    job.symbol,
+                                    job.archive_type,
+                                    job.period,
+                                    error
+                                );
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        failed_files += 1;
+                        let message = format!("{:#}", error);
+                        app_log::warn!(
+                            "[Binance][现货] ZIP 下载/解析失败：symbol={} type={} period={} error={}",
+                            job.symbol,
+                            job.archive_type,
+                            job.period,
+                            message
+                        );
+                        if message.contains("429") || message.contains("418") {
+                            stop_workers.store(true, AtomicOrdering::Release);
+                            rate_limit_error = Some(error);
+                        }
+                    }
+                }
+
+                let processed = imported_files + missing_files + failed_files;
+                if processed > 0 && processed % 100 == 0 {
+                    app_log::info!(
+                        "[Binance][现货] MA{} ZIP 导入进度：处理={}，成功文件={}，缺失文件={}，失败文件={}，入库K线={}",
+                        days,
+                        processed,
+                        imported_files,
+                        missing_files,
+                        failed_files,
+                        imported_rows
+                    );
+                }
+            }
+        });
+
+        app_log::info!(
+            "[Binance][现货] MA{} ZIP 日线导入结束：成功文件={}，缺失文件={}，失败文件={}，入库K线={}",
+            days,
+            imported_files,
+            missing_files,
+            failed_files,
+            imported_rows
+        );
+
+        if let Some(error) = rate_limit_error {
+            return Err(error).context("Binance public data archive rate limit stopped this import");
+        }
+    } else {
+        app_log::info!(
+            "[Binance][现货] MA{} ZIP 日线已是最新：无需重复下载归档",
+            days
+        );
+    }
+
     list_cached_usdt_daily_ma_signals(&connection, days)
+}
+
+#[derive(Debug, Clone)]
+struct SpotDailyArchiveJob {
+    symbol: String,
+    archive_type: &'static str,
+    period: String,
+}
+
+fn first_monday_of_month(month_start: chrono::NaiveDate) -> chrono::NaiveDate {
+    let offset = (7 - month_start.weekday().num_days_from_monday()) % 7;
+    month_start + ChronoDuration::days(i64::from(offset))
+}
+
+fn should_download_spot_archive(
+    connection: &Connection,
+    job: &SpotDailyArchiveJob,
+    today: chrono::NaiveDate,
+) -> anyhow::Result<bool> {
+    let status = connection
+        .query_row(
+            "SELECT status FROM spot_kline_archive_imports WHERE symbol = ?1 AND archive_type = ?2 AND period = ?3",
+            params![job.symbol, job.archive_type, job.period],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .context("query Binance archive import status failed")?;
+
+    match status.as_deref() {
+        Some("imported") => Ok(false),
+        Some("missing") if should_remember_missing_archive(job, today) => Ok(false),
+        _ => Ok(true),
+    }
+}
+
+fn should_remember_missing_archive(
+    job: &SpotDailyArchiveJob,
+    today: chrono::NaiveDate,
+) -> bool {
+    if job.archive_type == "monthly" {
+        return true;
+    }
+
+    chrono::NaiveDate::parse_from_str(&job.period, "%Y-%m-%d")
+        .map(|date| date < today - ChronoDuration::days(2))
+        .unwrap_or(false)
+}
+
+fn mark_spot_archive_import(
+    connection: &Connection,
+    job: &SpotDailyArchiveJob,
+    status: &str,
+) -> anyhow::Result<()> {
+    connection
+        .execute(
+            r#"
+            INSERT INTO spot_kline_archive_imports (
+                symbol, archive_type, period, status, imported_at
+            )
+            VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)
+            ON CONFLICT(symbol, archive_type, period) DO UPDATE SET
+                status = excluded.status,
+                imported_at = CURRENT_TIMESTAMP
+            "#,
+            params![job.symbol, job.archive_type, job.period, status],
+        )
+        .context("save Binance archive import status failed")?;
+    Ok(())
 }
 
 pub fn list_spot_daily_klines_blocking(
