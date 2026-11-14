@@ -296,7 +296,8 @@ impl SpotAiAnalysisPage {
                 row.risk_score,
                 "权重 15%。先计算 24 小时振幅：(24h 最高价 - 24h 最低价) ÷ 24h 最低价 × 100%；再按 100 - 振幅(%) × 4 计分，并限制在 0～100 分。振幅越大，风险参考分越低。",
             ),
-            (                "市场情绪",
+            (
+                "市场情绪",
                 row.sentiment_score,
                 "权重 10%。使用 CoinMarketCap 全市场恐惧与贪婪指数原始值（0～100）作为情绪分。该指标反映整个加密市场，不代表当前交易对的独立情绪。若请求失败则使用 50 分中性占位。",
             ),
@@ -434,7 +435,8 @@ impl Render for SpotAiAnalysisPage {
                         h_flex()
                             .items_center()
                             .justify_between()
-                            .gap_3()                            .child(
+                            .gap_3()
+                            .child(
                                 v_flex()
                                     .flex_1()
                                     .gap_1()
