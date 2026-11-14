@@ -356,6 +356,8 @@ impl MarketHeatmapPage {
                                 .flex_1()
                                 .h_full()
                                 .min_w(px(0.))
+                                // 负外边距覆盖 GPUI 子像素取整产生的细缝。
+                                .ml(px(-2.))
                                 .child(self.render_treemap_node(second, cx)),
                         )
                         .into_any_element()
@@ -377,6 +379,8 @@ impl MarketHeatmapPage {
                                 .flex_1()
                                 .w_full()
                                 .min_h(px(0.))
+                                // 负外边距覆盖 GPUI 子像素取整产生的细缝。
+                                .mt(px(-2.))
                                 .child(self.render_treemap_node(second, cx)),
                         )
                         .into_any_element()
