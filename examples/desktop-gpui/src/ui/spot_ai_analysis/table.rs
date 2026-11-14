@@ -20,12 +20,12 @@ impl SpotAiAnalysisTableDelegate {
     pub(super) fn new(page: WeakEntity<SpotAiAnalysisPage>) -> Self {
         Self {
             columns: vec![
-                Column::new("symbol", "交易对").width(px(130.)).fixed_left().sortable(),
+                Column::new("symbol", "名称").width(px(174.)).fixed_left().sortable()
                 Column::new("change", "24h 涨跌").width(px(90.)).sortable(),
                 Column::new("trend", "趋势判断").width(px(100.)).sortable(),
-                Column::new("score", "综合评分").width(px(82.)).sortable(),
                 Column::new("turnover", "24h 成交额").width(px(110.)).sortable(),
                 Column::new("ma120", "120日线位置").width(px(112.)).sortable(),
+                Column::new("score", "综合评分").width(px(82.)).sortable()
             ],
             rows: Vec::new(),
             loading: false,
@@ -66,24 +66,71 @@ impl SpotAiAnalysisTableDelegate {
             .into_any_element()
     }
 
-    fn symbol_cell(
+    fn select_cell(
         &self,
         row_ix: usize,
+        col_ix: usize,
         row: &SpotAiAnalysisRow,
-        theme: &gpui_component::Theme,
+        content: impl IntoElement,
     ) -> AnyElement {
         let page = self.page.clone();
         let symbol = row.product.symbol.clone();
-        Button::new(("spot-ai-row", row_ix))
+        Button::new(("spot-ai-row-cell", row_ix, col_ix))
             .ghost()
             .xsmall()
-            .label(row.product.symbol.clone())
-            .text_color(palette::text_strong(theme))
+            .w_full()
+            .h_full()
+            .child(content)
             .on_click(move |_, _, cx| {
                 _ = page.update(cx, |this, cx| this.select_symbol(symbol.clone(), cx));
             })
             .into_any_element()
     }
+
+    fn name_cell(
+        &self,
+        row_ix: usize,
+        col_ix: usize,
+        row: &SpotAiAnalysisRow,
+        theme: &gpui_component::Theme,
+    ) -> AnyElement {
+        self.select_cell(
+            row_ix,
+            col_ix,
+            row,
+            v_flex()
+                .size_full()
+                .justify_center()
+                .px_1()
+                .gap_0()
+                .child(
+                    h_flex()
+                        .w_full()
+                        .items_center()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .font_semibold()
+                                .text_color(palette::text_strong(theme))
+                                .child(row.product.base_asset.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(palette::muted(theme))
+                                .child(format!("/{}", row.product.quote_asset)),
+                        ),
+                )
+                .child(
+                    div()
+                        .text_size(px(10.))
+                        .text_color(palette::muted_soft(theme))
+                        .child(row.product.asset_name.clone()),
+                ),
+        )
+    }
+
 }
 
 impl TableDelegate for SpotAiAnalysisTableDelegate {
@@ -110,36 +157,30 @@ impl TableDelegate for SpotAiAnalysisTableDelegate {
         let Some(row) = self.rows.get(row_ix) else {
             return Self::cell("", palette::text(theme));
         };
-        match self.columns[col_ix].key.as_ref() {
-            "symbol" => self.symbol_cell(row_ix, row, theme),
+        let key = self.columns[col_ix].key.as_ref();
+        match key {
+            "symbol" => self.name_cell(row_ix, col_ix, row, theme),
             "change" => {
                 let value = row.product.price_change_percent.unwrap_or(0.0);
-                Self::cell(
+                self.select_cell(row_ix, col_ix, row, Self::cell(
                     format!("{value:+.2}%"),
-                    if value >= 0.0 {
-                        theme.success
-                    } else {
-                        theme.danger
-                    },
-                )
+                    if value >= 0.0 { theme.success } else { theme.danger },
+                ))
             }
-            "trend" => Self::cell(row.trend_label.clone(), palette::text(theme)),
-            "score" => Self::cell(format!("{:.0}", row.total_score), palette::text(theme)),
-            "turnover" => Self::cell(
-                format_compact(row.product.quote_volume),
-                palette::text(theme),
-            ),
+            "trend" => self.select_cell(row_ix, col_ix, row, Self::cell(row.trend_label.clone(), palette::text(theme))),
+            "score" => self.select_cell(row_ix, col_ix, row, Self::cell(format!("{:.0}", row.total_score), palette::text(theme))),
+            "turnover" => self.select_cell(row_ix, col_ix, row, Self::cell(format_compact(row.product.quote_volume), palette::text(theme))),
             "ma120" => {
                 let value = row.ma120_difference_percent;
-                Self::cell(
+                self.select_cell(row_ix, col_ix, row, Self::cell(
                     format_ma120_location(value),
                     match value {
                         Some(value) if value > 1.0 => theme.success,
                         Some(value) if value < -1.0 => theme.danger,
                         _ => palette::muted(theme),
                     },
-                )
-            },
+                ))
+            }
             _ => Self::cell("", palette::text(theme)),
         }
     }
@@ -194,7 +235,7 @@ fn format_ma120_location(value: Option<f64>) -> String {
         Some(value) if value > 1.0 => format!("线上 +{value:.2}%"),
         Some(value) if value < -1.0 => format!("线下 {value:.2}%"),
         Some(value) => format!("贴近 {value:+.2}%"),
-        None => "数据不足".to_string(),
+        None => String::new()
     }
 }
 
