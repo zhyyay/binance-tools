@@ -421,7 +421,7 @@ pub fn load_or_fetch_spot_daily_klines_blocking(
                 archive_type: "monthly",
                 period: month.format("%Y-%m").to_string(),
             };
-            import_one_spot_archive_if_needed(&connection, &mut connection, &client, &job, today, now)?;
+            import_one_spot_archive_if_needed(&mut connection, &client, &job, today, now)?;
         } else {
             let mut date = std::cmp::max(month, start_date);
             let end_date = std::cmp::min(next_month, today);
@@ -445,8 +445,7 @@ pub fn load_or_fetch_spot_daily_klines_blocking(
 }
 
 fn import_one_spot_archive_if_needed(
-    connection: &Connection,
-    write_connection: &mut Connection,
+    connection: &mut Connection,
     client: &reqwest::blocking::Client,
     job: &SpotDailyArchiveJob,
     today: chrono::NaiveDate,
@@ -467,7 +466,7 @@ fn import_one_spot_archive_if_needed(
                 .into_iter()
                 .filter(|kline| kline.close_time < now)
                 .collect::<Vec<_>>();
-            upsert_spot_daily_klines(write_connection, &closed_klines)?;
+            upsert_spot_daily_klines(connection, &closed_klines)?;
             mark_spot_archive_import(connection, job, "imported")?;
         }
         None => {
