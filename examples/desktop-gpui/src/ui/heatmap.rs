@@ -364,7 +364,7 @@ impl MarketHeatmapPage {
                         .size_full()
                         .min_w(px(0.))
                         .min_h(px(0.))
-                        .gap(px(4.))
+                        .gap(px(0.))
                         .child(
                             div()
                                 .h(relative(*first_ratio))
