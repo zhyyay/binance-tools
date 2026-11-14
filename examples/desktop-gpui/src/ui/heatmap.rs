@@ -6,7 +6,6 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
-    scroll::ScrollableElement,
     v_flex,
 };
 use std::{cmp::Ordering, collections::BTreeSet};
