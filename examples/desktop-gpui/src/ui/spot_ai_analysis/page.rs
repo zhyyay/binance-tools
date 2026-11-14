@@ -337,26 +337,6 @@ impl SpotAiAnalysisPage {
                             .on_click(cx.listener(|this, _, _, cx| this.analyze_selected(cx))),
                     ),
             )
-            .child(
-                h_flex()
-                    .gap_3()
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .gap_1()
-                            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("综合评分"))
-                            .child(div().text_size(px(27.)).font_bold().text_color(score_color(row.total_score, theme)).child(format!("{:.0}", row.total_score)))
-                            .child(div().text_size(px(10.)).text_color(palette::muted_soft(theme)).child("满分 100")),
-                    )
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .gap_1()
-                            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("趋势判断"))
-                            .child(div().text_size(px(16.)).font_semibold().text_color(trend_color(&row.trend_label, theme)).child(row.trend_label.clone()))
-                            .child(div().text_size(px(10.)).text_color(palette::muted_soft(theme)).child("基于 24 小时涨跌")),
-                    ),
-            )
             .child(div().h(px(1.)).bg(palette::border(theme)))
             .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("行情摘要"))
             .child(
@@ -613,7 +593,10 @@ fn build_analysis_rows(
         .map(|s|(s.symbol.clone(),s)).collect::<HashMap<_,_>>();
     let mut rows=products.into_iter().filter_map(|product| {
         let s=scores.get(&product.symbol)?;
-        let ma120_signal = ma120.get(product.symbol.as_str()).copied();
+        let ma120_signal = ma120
+            .get(product.symbol.as_str())
+            .copied()
+            .filter(|signal| signal.samples >= 120);
         let ma120_average_price = ma120_signal.map(|signal| signal.average_price);
         let ma120_samples = ma120_signal.map(|signal| signal.samples).unwrap_or(0);
         let ma120_difference_percent = ma120_signal
