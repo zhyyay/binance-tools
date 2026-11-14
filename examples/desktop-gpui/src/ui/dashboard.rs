@@ -311,6 +311,9 @@ impl Dashboard {
                 });
                 cx.notify();
             }
+            SpotAiAnalysisEvent::OpenKline(symbol) => {
+                self.open_kline_candlestick_page(symbol.clone(), window, cx);
+            }
         }
     }
 
