@@ -314,12 +314,7 @@ fn candlestick_icon(color: Hsla) -> AnyElement {
 }
 
 fn format_ma120_location(value: Option<f64>) -> String {
-    match value {
-        Some(value) if value > 1.0 => format!("线上 +{value:.2}%"),
-        Some(value) if value < -1.0 => format!("线下 {value:.2}%"),
-        Some(value) => format!("贴近 {value:+.2}%"),
-        None => String::new()
-    }
+    value.map(|value| format!("{value:+.2}%")).unwrap_or_default()
 }
 
 fn format_compact(value: Option<f64>) -> String {
