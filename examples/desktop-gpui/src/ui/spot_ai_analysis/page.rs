@@ -17,6 +17,9 @@ use gpui_component::{
 use spot_ai_analysis::{AnalysisResult, DailyMaSnapshot, MarketSentiment, MarketSnapshot, analyze_market_with_sentiment, build_report_prompt};
 use std::{cmp::Ordering, collections::HashMap, sync::{Mutex, OnceLock}, time::{Duration, Instant}};
 
+#[derive(Clone, Copy, Debug)]
+enum SpotLoadMode { Cache, Sync, Refresh }
+
 pub enum SpotAiAnalysisEvent {
     AnalyzeWithAi { prompt: String, display_content: String },
     OpenKline(String),
@@ -88,7 +91,7 @@ impl SpotAiAnalysisPage {
             _load_task: Task::ready(()),
             _subscriptions,
         };
-        this.scan(cx);
+        this.load_data(SpotLoadMode::Cache, cx);
         this
     }
 
@@ -105,104 +108,58 @@ impl SpotAiAnalysisPage {
         }
     }
 
-    fn scan(&mut self, cx: &mut Context<Self>) {
-        if self.loading {
-            return;
-        }
+    fn load_data(&mut self, mode: SpotLoadMode, cx: &mut Context<Self>) {
+        if self.loading { return; }
         self.loading = true;
         self.error = None;
-        self.table.update(cx, |table, cx| {
-            table.delegate_mut().set_loading(true);
-            table.refresh(cx);
-        });
         cx.notify();
-
         self._load_task = cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_spawn(async move {
-                    app_log::info!("[现货AI分析][扫描诊断] 1/4 开始刷新 Binance 行情");
-                    let products =
-                        binance_tools::db::market::refresh_market_products_blocking()?;
-                    app_log::info!(
-                        "[现货AI分析][扫描诊断] 1/4 行情刷新完成，产品数量={}",
-                        products.len()
-                    );
-
-                    app_log::info!("[现货AI分析][扫描诊断] 2/4 开始读取 30 日日线均线缓存");
-                    let cached_ma = binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(30)
-                        .unwrap_or_default();
-                    app_log::info!(
-                        "[现货AI分析][扫描诊断] 2/4 30日均线缓存读取完成，记录数量={}",
-                        cached_ma.len()
-                    );
-
-                    app_log::info!("[现货AI分析][扫描诊断] 开始检查并增量更新 120 日日线缓存");
-                    let cached_ma120 = match binance_tools::db::spot::load_or_fetch_usdt_daily_ma_signals_blocking(
-                        BinanceSettings::production(),
-                        120,
-                    ) {
+            let result = cx.background_spawn(async move {
+                let products = match mode {
+                    SpotLoadMode::Cache => {
+                        let cached = binance_tools::db::market::load_cached_market_products_blocking()?;
+                        if cached.is_empty() { binance_tools::db::market::load_or_fetch_market_products_blocking()? } else { cached }
+                    }
+                    SpotLoadMode::Sync => binance_tools::db::market::load_or_fetch_market_products_blocking()?,
+                    SpotLoadMode::Refresh => binance_tools::db::market::refresh_market_products_blocking()?,
+                };
+                let cached_ma = binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(30).unwrap_or_default();
+                let cached_ma120 = if matches!(mode, SpotLoadMode::Sync) {
+                    match binance_tools::db::spot::load_or_fetch_usdt_daily_ma_signals_blocking(BinanceSettings::production(), 120) {
                         Ok(signals) => signals,
                         Err(error) => {
-                            app_log::warn!(
-                                "[现货AI分析] MA120 日线更新失败，回退到本地缓存 error={:#}",
-                                error
-                            );
-                            binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(120)
-                                .unwrap_or_default()                        }
-                    };
-                    app_log::info!(
-                        "[现货AI分析][扫描诊断] MA120 读取/更新完成，具备完整样本的币种数量={}",
-                        cached_ma120.len()
-                    );
-
-                    app_log::info!("[现货AI分析][扫描诊断] 3/4 开始获取市场情绪");
-                    let sentiment = fetch_cmc_sentiment().ok();
-                    app_log::info!(
-                        "[现货AI分析][扫描诊断] 3/4 市场情绪处理完成，是否获取成功={}",
-                        sentiment.is_some()
-                    );
-
-                    app_log::info!("[现货AI分析][扫描诊断] 4/4 开始计算评分并构建表格数据");
-                    let rows = build_analysis_rows(products, &cached_ma, &cached_ma120, sentiment.as_ref());
-                    app_log::info!(
-                        "[现货AI分析][扫描诊断] 4/4 评分计算完成，候选行数={}",
-                        rows.len()
-                    );
-                    Ok::<_, anyhow::Error>((rows, sentiment))
-                })
-                .await;
-
+                            app_log::warn!("[现货AI分析] MA120 同步失败，使用本地缓存 error={:#}", error);
+                            binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(120).unwrap_or_default()
+                        }
+                    }
+                } else { binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(120).unwrap_or_default() };
+                let sentiment = if matches!(mode, SpotLoadMode::Cache) { None } else { fetch_cmc_sentiment().ok() };
+                let rows = build_analysis_rows(products, &cached_ma, &cached_ma120, sentiment.as_ref());
+                Ok::<_, anyhow::Error>((rows, sentiment))
+            }).await;
             _ = this.update(cx, |this, cx| {
                 this.loading = false;
                 match result {
                     Ok((rows, sentiment)) => {
                         this.scanned_count = rows.len();
-                        this.selected_symbol = rows.first().map(|row| row.product.symbol.clone());
+                        if this.selected_symbol.as_ref().map_or(true, |symbol| !rows.iter().any(|row| &row.product.symbol == symbol)) {
+                            this.selected_symbol = rows.first().map(|row| row.product.symbol.clone());
+                        }
                         this.rows = rows;
                         if let Some(s) = sentiment.as_ref() {
-                            app_log::info!("[现货AI分析] CoinMarketCap 恐惧贪婪指数={} 分类={} 更新时间={}", s.value, s.classification, s.update_time);
-                        } else {
-                            app_log::warn!("[现货AI分析] CoinMarketCap 恐惧贪婪指数获取失败，当前使用 50 分中性占位");
+                            app_log::info!("[现货AI分析] 恐惧与贪婪指数={} 分类={} 更新时间={}", s.value, s.classification, s.update_time);
                         }
                         this.refresh_visible_rows(cx);
-                        app_log::info!(
-                            "[现货AI分析] 扫描完成：交易对={}，使用已有日线均线缓存辅助评分",
-                            this.scanned_count
-                        );
+                        app_log::info!("[现货AI分析] 数据加载完成 mode={:?} rows={}", mode, this.scanned_count);
                     }
-                    Err(err) => {
-                        this.error = Some(format!("{:#}", err));
-                        this.table.update(cx, |table, cx| {
-                            table.delegate_mut().set_error();
-                            table.refresh(cx);
-                        });
-                        app_log::error!("[现货AI分析] 扫描失败 error={:#}", err);
-                    }
+                    Err(err) => { this.error = Some(format!("{:#}", err)); app_log::error!("[现货AI分析] 数据加载失败 mode={:?} error={:#}", mode, err); }
                 }
                 cx.notify();
             });
         });
     }
+    fn sync_data(&mut self, cx: &mut Context<Self>) { self.load_data(SpotLoadMode::Sync, cx); }
+    fn refresh_data(&mut self, cx: &mut Context<Self>) { self.load_data(SpotLoadMode::Refresh, cx); }
 
     fn select_symbol(&mut self, symbol: String, cx: &mut Context<Self>) {
         self.selected_symbol = Some(symbol);
@@ -314,8 +271,8 @@ impl SpotAiAnalysisPage {
             .min_w(px(300.))
             .h_full()
             .overflow_y_scrollbar()
-            .gap_2()
-            .p_3()
+            .gap_3()
+            .p_4()
             .rounded(px(8.))
             .bg(palette::surface_strong(theme))
             .border_1()
@@ -400,7 +357,7 @@ impl SpotAiAnalysisPage {
             }))
             .child(div().h(px(1.)).bg(palette::border(theme)))
             .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("数据依据与限制"))
-            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).line_height(px(17.)).child(row.basis.clone()))
+            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).line_height(px(20.)).child(row.basis.clone()))
             .child(
                 div()
                     .text_size(px(11.))
@@ -448,13 +405,21 @@ impl Render for SpotAiAnalysisPage {
                                 h_flex()
                                     .gap_2()
                                     .child(
-                                        Button::new("spot-ai-scan")
+                                        Button::new("spot-ai-sync")
                                             .outline()
                                             .xsmall()
-                                            .label("重新扫描")
+                                            .label("同步")
                                             .loading(loading)
                                             .disabled(loading)
-                                            .on_click(cx.listener(|this, _, _, cx| this.scan(cx))),
+                                            .on_click(cx.listener(|this, _, _, cx| this.sync_data(cx))),
+                                    )
+                                    .child(
+                                        Button::new("spot-ai-refresh")
+                                            .outline()
+                                            .xsmall()
+                                            .label("刷新")
+                                            .disabled(loading)
+                                            .on_click(cx.listener(|this, _, _, cx| this.refresh_data(cx))),
                                     )
                                     .child(
                                         Button::new("spot-ai-run")
