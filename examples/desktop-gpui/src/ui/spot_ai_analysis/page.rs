@@ -122,11 +122,11 @@ impl SpotAiAnalysisPage {
                         products.len()
                     );
 
-                    app_log::info!("[现货AI分析][扫描诊断] 2/5 开始读取 30 日日线均线缓存");
+                    app_log::info!("[现货AI分析][扫描诊断] 2/4 开始读取 30 日日线均线缓存");
                     let cached_ma = binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(30)
                         .unwrap_or_default();
                     app_log::info!(
-                        "[现货AI分析][扫描诊断] 2/5 30日均线缓存读取完成，记录数量={}",
+                        "[现货AI分析][扫描诊断] 2/4 30日均线缓存读取完成，记录数量={}",
                         cached_ma.len()
                     );
 
