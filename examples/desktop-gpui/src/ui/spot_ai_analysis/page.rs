@@ -311,7 +311,7 @@ impl SpotAiAnalysisPage {
                     .gap_2()
                     .child(
                         div()
-                            .id(format!("spot-ai-dimension-{label}"))
+                            .id(label)
                             .w(px(74.))
                             .text_size(px(11.))
                             .text_color(palette::text(theme))
