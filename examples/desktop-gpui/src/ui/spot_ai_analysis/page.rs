@@ -312,7 +312,7 @@ impl SpotAiAnalysisPage {
             .flex_1()
             .min_w(px(300.))
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_scrollbar()
             .gap_2()
             .p_3()
             .rounded(px(8.))
