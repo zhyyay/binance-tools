@@ -165,6 +165,18 @@ fn run_migrations(connection: &Connection) -> anyhow::Result<()> {
             CREATE INDEX IF NOT EXISTS idx_spot_klines_1d_symbol_time
                 ON spot_klines_1d(symbol, open_time);
 
+            CREATE TABLE IF NOT EXISTS spot_kline_archive_imports (
+                symbol TEXT NOT NULL,
+                archive_type TEXT NOT NULL,
+                period TEXT NOT NULL,
+                status TEXT NOT NULL,
+                imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (symbol, archive_type, period)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_spot_kline_archive_imports_status
+                ON spot_kline_archive_imports(status, archive_type, period);
+
             CREATE TABLE IF NOT EXISTS binance_market_products_cache (
                 symbol TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
