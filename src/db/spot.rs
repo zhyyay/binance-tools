@@ -66,14 +66,22 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
         replace_spot_symbols(&mut connection, &symbols)?;
     }
 
+    // 多取一根，确保即使 Binance 返回当前未收盘日线，也有足够的已收盘日线。
+    // 只持久化已收盘 K 线；后续扫描仅在最新收盘日线落后时增量补齐。
     let missing_symbols = list_usdt_symbols_missing_daily_klines(&connection, days)?;
     for symbol in missing_symbols {
+        let fetch_limit = days.saturating_add(1).min(1000);
         let klines = crate::binance::spot::fetch_spot_daily_klines_blocking(
             settings.clone(),
             &symbol,
-            days,
+            fetch_limit,
         )?;
-        upsert_spot_daily_klines(&mut connection, &klines)?;
+        let now = current_time_millis();
+        let closed_klines = klines
+            .into_iter()
+            .filter(|kline| kline.close_time < now)
+            .collect::<Vec<_>>();
+        upsert_spot_daily_klines(&mut connection, &closed_klines)?;
         sleep(Duration::from_millis(150));
     }
 
@@ -447,22 +455,33 @@ pub fn list_cached_usdt_daily_ma_signals(
     days: u16,
 ) -> anyhow::Result<Vec<DailyMaSignal>> {
     let days = days.clamp(1, 1000);
-    let start_time = daily_window_start_time(days);
-    let end_time = today_utc_open_time_millis();
+    let now = current_time_millis();
     let mut statement = connection
         .prepare(
             r#"
-            WITH kline_window AS (
+            WITH ranked_klines AS (
+                SELECT
+                    symbol,
+                    open_time,
+                    close_price,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY symbol
+                        ORDER BY open_time DESC
+                    ) AS row_number
+                FROM spot_klines_1d
+                WHERE interval = ?1
+                    AND close_time < ?2
+            ),
+            kline_window AS (
                 SELECT
                     symbol,
                     COUNT(*) AS samples,
                     AVG(close_price) AS average_price,
                     MAX(open_time) AS latest_open_time
-                FROM spot_klines_1d
-                WHERE interval = ?1
-                    AND open_time BETWEEN ?2 AND ?3
+                FROM ranked_klines
+                WHERE row_number <= ?3
                 GROUP BY symbol
-                HAVING samples >= ?4
+                HAVING COUNT(*) = ?3
             )
             SELECT
                 s.symbol,
@@ -486,24 +505,21 @@ pub fn list_cached_usdt_daily_ma_signals(
         .context("prepare cached USDT daily MA signal SQL failed")?;
 
     let signals = statement
-        .query_map(
-            params![DAILY_INTERVAL, start_time, end_time, i64::from(days)],
-            |row| {
-                let current_price: f64 = row.get(5)?;
-                let average_price: f64 = row.get(4)?;
+        .query_map(params![DAILY_INTERVAL, now, i64::from(days)], |row| {
+            let current_price: f64 = row.get(5)?;
+            let average_price: f64 = row.get(4)?;
 
-                Ok(DailyMaSignal {
-                    symbol: row.get(0)?,
-                    base_asset: row.get(1)?,
-                    quote_asset: row.get(2)?,
-                    days,
-                    current_price,
-                    average_price,
-                    difference_percent: ((current_price - average_price) / average_price) * 100.0,
-                    samples: row.get::<_, i64>(3)? as usize,
-                })
-            },
-        )
+            Ok(DailyMaSignal {
+                symbol: row.get(0)?,
+                base_asset: row.get(1)?,
+                quote_asset: row.get(2)?,
+                days,
+                current_price,
+                average_price,
+                difference_percent: ((current_price - average_price) / average_price) * 100.0,
+                samples: row.get::<_, i64>(3)? as usize,
+            })
+        })
         .context("query cached USDT daily MA signals failed")?
         .collect::<Result<Vec<_>, _>>()
         .context("read cached USDT daily MA signal rows failed")?;
@@ -515,33 +531,37 @@ pub fn list_usdt_symbols_missing_daily_klines(
     connection: &Connection,
     days: u16,
 ) -> anyhow::Result<Vec<String>> {
-    let days = days.clamp(1, 1000);
-    let start_time = daily_window_start_time(days);
-    let end_time = today_utc_open_time_millis();
+    let _days = days.clamp(1, 1000);
+    let now = current_time_millis();
+    let expected_latest_open_time = today_utc_open_time_millis() - DAY_MILLIS;
     let mut statement = connection
         .prepare(
             r#"
             SELECT s.symbol
             FROM spot_symbols s
-            LEFT JOIN spot_klines_1d k
-                ON k.symbol = s.symbol
-                AND k.interval = ?1
-                AND k.open_time BETWEEN ?2 AND ?3
+            LEFT JOIN (
+                SELECT symbol, MAX(open_time) AS latest_open_time
+                FROM spot_klines_1d
+                WHERE interval = ?1
+                    AND close_time < ?2
+                GROUP BY symbol
+            ) k ON k.symbol = s.symbol
             WHERE s.quote_asset = 'USDT'
                 AND s.status = 'TRADING'
                 AND s.spot_trading_allowed = 1
-            GROUP BY s.symbol
-            HAVING COUNT(k.open_time) < ?4
+                AND (
+                    k.latest_open_time IS NULL
+                    OR k.latest_open_time < ?3
+                )
             ORDER BY s.symbol
-            "#,
+            "#
         )
         .context("prepare missing USDT daily kline SQL failed")?;
 
     let symbols = statement
-        .query_map(
-            params![DAILY_INTERVAL, start_time, end_time, i64::from(days)],
-            |row| row.get::<_, String>(0),
-        )
+        .query_map(params![DAILY_INTERVAL, now, expected_latest_open_time], |row| {
+            row.get::<_, String>(0)
+        })
         .context("query missing USDT daily kline symbols failed")?
         .collect::<Result<Vec<_>, _>>()
         .context("read missing USDT daily kline symbol rows failed")?;
@@ -615,16 +635,15 @@ fn bool_to_i64(value: bool) -> i64 {
     if value { 1 } else { 0 }
 }
 
-fn daily_window_start_time(days: u16) -> i64 {
-    today_utc_open_time_millis() - (i64::from(days.clamp(1, 1000)) - 1) * DAY_MILLIS
+fn current_time_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn today_utc_open_time_millis() -> i64 {
-    let now_millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    now_millis / DAY_MILLIS * DAY_MILLIS
+    current_time_millis() / DAY_MILLIS * DAY_MILLIS
 }
 
 fn has_complete_daily_window(samples: usize, latest_open_time: Option<i64>, days: u16) -> bool {
@@ -706,11 +725,22 @@ mod tests {
                 SpotDailyKline {
                     symbol: "BTCUSDT".to_string(),
                     interval: DAILY_INTERVAL.to_string(),
-                    open_time: today - DAY_MILLIS,
+                    open_time: today - 2 * DAY_MILLIS,
                     open_price: 90.0,
                     high_price: 110.0,
                     low_price: 80.0,
                     close_price: 100.0,
+                    volume: 1.0,
+                    close_time: today - DAY_MILLIS - 1,
+                },
+                SpotDailyKline {
+                    symbol: "BTCUSDT".to_string(),
+                    interval: DAILY_INTERVAL.to_string(),
+                    open_time: today - DAY_MILLIS,
+                    open_price: 100.0,
+                    high_price: 130.0,
+                    low_price: 95.0,
+                    close_price: 120.0,
                     volume: 1.0,
                     close_time: today - 1,
                 },
@@ -718,10 +748,10 @@ mod tests {
                     symbol: "BTCUSDT".to_string(),
                     interval: DAILY_INTERVAL.to_string(),
                     open_time: today,
-                    open_price: 100.0,
-                    high_price: 130.0,
-                    low_price: 95.0,
-                    close_price: 120.0,
+                    open_price: 120.0,
+                    high_price: 150.0,
+                    low_price: 115.0,
+                    close_price: 140.0,
                     volume: 1.0,
                     close_time: today + DAY_MILLIS - 1,
                 },
@@ -742,9 +772,10 @@ mod tests {
         assert_eq!(signals[0].current_price, 120.0);
 
         let klines = list_spot_daily_klines(&connection, "BTCUSDT", 10).unwrap();
-        assert_eq!(klines.len(), 2);
+        assert_eq!(klines.len(), 3);
         assert_eq!(klines[0].close_price, 100.0);
         assert_eq!(klines[1].close_price, 120.0);
+        assert_eq!(klines[2].close_price, 140.0);
     }
 
     #[test]
