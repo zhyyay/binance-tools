@@ -25,6 +25,7 @@ impl SpotAiAnalysisTableDelegate {
                 Column::new("trend", "趋势判断").width(px(100.)).sortable(),
                 Column::new("score", "综合评分").width(px(82.)).sortable(),
                 Column::new("turnover", "24h 成交额").width(px(110.)).sortable(),
+                Column::new("ma120", "120日线位置").width(px(112.)).sortable(),
             ],
             rows: Vec::new(),
             loading: false,
@@ -128,6 +129,17 @@ impl TableDelegate for SpotAiAnalysisTableDelegate {
                 format_compact(row.product.quote_volume),
                 palette::text(theme),
             ),
+            "ma120" => {
+                let value = row.ma120_difference_percent;
+                Self::cell(
+                    format_ma120_location(value),
+                    match value {
+                        Some(value) if value > 1.0 => theme.success,
+                        Some(value) if value < -1.0 => theme.danger,
+                        _ => palette::muted(theme),
+                    },
+                )
+            },
             _ => Self::cell("", palette::text(theme)),
         }
     }
@@ -159,6 +171,9 @@ impl TableDelegate for SpotAiAnalysisTableDelegate {
                     .partial_cmp(&b.product.quote_volume)
                     .unwrap_or(Ordering::Equal),
                 "trend" => a.trend_label.cmp(&b.trend_label),
+                "ma120" => a.ma120_difference_percent
+                    .partial_cmp(&b.ma120_difference_percent)
+                    .unwrap_or(Ordering::Equal),
                 _ => Ordering::Equal,
             };
             if descending {
@@ -171,6 +186,15 @@ impl TableDelegate for SpotAiAnalysisTableDelegate {
 
     fn loading(&self, _: &App) -> bool {
         self.loading
+    }
+}
+
+fn format_ma120_location(value: Option<f64>) -> String {
+    match value {
+        Some(value) if value > 1.0 => format!("线上 +{value:.2}%"),
+        Some(value) if value < -1.0 => format!("线下 {value:.2}%"),
+        Some(value) => format!("贴近 {value:+.2}%"),
+        None => "数据不足".to_string(),
     }
 }
 
