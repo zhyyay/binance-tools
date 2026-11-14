@@ -259,8 +259,9 @@ impl SpotAiAnalysisPage {
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(div().text_size(px(15.)).font_semibold().child(row.product.symbol.clone()))
-                            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child(row.product.asset_name.clone())),
+                            .child(div().text_size(px(18.)).font_bold().text_color(palette::text_strong(theme)).child(row.product.symbol.clone()))
+                            .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child(row.product.asset_name.clone()))
+                            .child(div().text_size(px(10.)).text_color(palette::muted_soft(theme)).child("现货研究 · USDT")),
                     )
                     .child(
                         Button::new("spot-ai-deep-analysis")
@@ -278,30 +279,32 @@ impl SpotAiAnalysisPage {
                             .flex_1()
                             .gap_1()
                             .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("综合评分"))
-                            .child(div().text_size(px(25.)).font_semibold().child(format!("{:.0} / 100", row.total_score))),
+                            .child(div().text_size(px(27.)).font_bold().text_color(score_color(row.total_score, theme)).child(format!("{:.0}", row.total_score)))
+                            .child(div().text_size(px(10.)).text_color(palette::muted_soft(theme)).child("满分 100")),
                     )
                     .child(
                         v_flex()
                             .flex_1()
                             .gap_1()
                             .child(div().text_size(px(11.)).text_color(palette::muted(theme)).child("趋势判断"))
-                            .child(div().text_size(px(16.)).font_semibold().child(row.trend_label.clone())),
+                            .child(div().text_size(px(16.)).font_semibold().text_color(trend_color(&row.trend_label, theme)).child(row.trend_label.clone()))
+                            .child(div().text_size(px(10.)).text_color(palette::muted_soft(theme)).child("基于 24 小时涨跌")),
                     ),
             )
             .child(div().h(px(1.)).bg(palette::border(theme)))
-            .child(div().text_size(px(12.)).font_semibold().child("行情摘要"))
-            .child(detail_stat("市场恐惧贪婪指数", format!("{:.0} · {}", row.sentiment_value, row.sentiment_classification), theme))
+            .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("行情摘要"))
+            .child(detail_stat_colored("恐惧与贪婪指数", format!("{:.0} · {}", row.sentiment_value, row.sentiment_classification), score_color(row.sentiment_value, theme), theme))
             .child(div().text_size(px(10.)).text_color(palette::muted(theme)).child(format!("CoinMarketCap · 北京时间 {}", format_beijing_time(&row.sentiment_update_time))))
             .child(
                 h_flex()
                     .gap_2()
                     .flex_wrap()
-                    .child(detail_stat("24h 涨跌", format_signed_percent(row.product.price_change_percent), theme))
+                    .child(detail_stat_colored("24h 涨跌", format_signed_percent(row.product.price_change_percent), change_color(row.product.price_change_percent, theme), theme))
                     .child(detail_stat("最新价格", format_price(row.product.last_price), theme))
                     .child(detail_stat("24h 成交额", format_compact(row.product.quote_volume), theme))
                     .child(detail_stat("24h 振幅", amplitude_percent(&row.product), theme)),
             )
-            .child(div().text_size(px(12.)).font_semibold().child("六维研究评分"))
+            .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("六维研究评分"))
             .children(dimensions.into_iter().map(|(label, score, explanation)| {
                 h_flex()
                     .items_center()
@@ -310,7 +313,7 @@ impl SpotAiAnalysisPage {
                         div()
                             .w(px(74.))
                             .text_size(px(11.))
-                            .text_color(palette::muted(theme))
+                            .text_color(palette::text(theme))
                             .child(format!("{label} ⓘ"))
                             .tooltip(move |_, cx| {
                                 cx.new(|_| Tooltip::new(explanation))
@@ -327,13 +330,13 @@ impl SpotAiAnalysisPage {
                                     .h(px(6.))
                                     .w(px(score.clamp(0.0, 100.0) as f32 * 1.6))
                                     .rounded(px(3.))
-                                    .bg(theme.primary.opacity(0.78)),
+                                    .bg(score_color(score, theme)),
                             ),
                     )
-                    .child(div().w(px(28.)).text_size(px(11.)).text_color(palette::text(theme)).child(format!("{:.0}", score)))
+                    .child(div().w(px(28.)).text_size(px(11.)).font_semibold().text_color(score_color(score, theme)).child(format!("{:.0}", score)))
             }))
             .child(div().h(px(1.)).bg(palette::border(theme)))
-            .child(div().text_size(px(12.)).font_semibold().child("数据依据与限制"))
+            .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("数据依据与限制"))
             .child(div().text_size(px(11.)).text_color(palette::muted(theme)).line_height(px(17.)).child(row.basis.clone()))
             .child(
                 div()
@@ -512,6 +515,55 @@ fn detail_stat(label: &'static str, value: String, theme: &gpui_component::Theme
         .child(div().text_size(px(10.)).text_color(palette::muted(theme)).child(label))
         .child(div().text_size(px(12.)).font_semibold().child(value))
         .into_any_element()
+}
+
+
+fn detail_stat_colored(
+    label: &'static str,
+    value: String,
+    color: gpui::Hsla,
+    theme: &gpui_component::Theme,
+) -> AnyElement {
+    v_flex()
+        .flex_1()
+        .min_w(px(90.))
+        .gap_1()
+        .p_2()
+        .rounded(px(6.))
+        .bg(color.opacity(0.08))
+        .border_1()
+        .border_color(color.opacity(0.18))
+        .child(div().text_size(px(10.)).text_color(palette::muted(theme)).child(label))
+        .child(div().text_size(px(12.)).font_semibold().text_color(color).child(value))
+        .into_any_element()
+}
+
+fn score_color(score: f64, theme: &gpui_component::Theme) -> gpui::Hsla {
+    if score >= 65.0 {
+        theme.success.opacity(0.95)
+    } else if score <= 35.0 {
+        theme.danger.opacity(0.95)
+    } else {
+        palette::text_strong(theme)
+    }
+}
+
+fn change_color(value: Option<f64>, theme: &gpui_component::Theme) -> gpui::Hsla {
+    match value {
+        Some(value) if value > 0.0 => theme.success.opacity(0.95),
+        Some(value) if value < 0.0 => theme.danger.opacity(0.95),
+        _ => palette::muted(theme),
+    }
+}
+
+fn trend_color(label: &str, theme: &gpui_component::Theme) -> gpui::Hsla {
+    if label.contains("偏强") || label.contains("走强") {
+        theme.success.opacity(0.95)
+    } else if label.contains("偏弱") || label.contains("走弱") {
+        theme.danger.opacity(0.95)
+    } else {
+        palette::text_strong(theme)
+    }
 }
 
 fn format_signed_percent(value: Option<f64>) -> String {
