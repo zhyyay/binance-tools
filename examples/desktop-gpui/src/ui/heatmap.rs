@@ -522,9 +522,8 @@ impl Render for MarketHeatmapPage {
                             .min_h(px(0.))
                             .child(
                                 if self.loading && self.visible_products.is_empty() {
-                                    div()
+                                    v_flex()
                                         .size_full()
-                                        .flex()
                                         .items_center()
                                         .justify_center()
                                         .text_color(palette::muted(cx.theme()))
