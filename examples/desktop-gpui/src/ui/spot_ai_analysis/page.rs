@@ -147,8 +147,7 @@ impl SpotAiAnalysisPage {
                                 error
                             );
                             binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(120)
-                                .unwrap_or_default()
-                        }
+                                .unwrap_or_default()                        }
                     };
                     app_log::info!(
                         "[现货AI分析][扫描诊断] MA120 读取/更新完成，具备完整样本的币种数量={}",
@@ -297,8 +296,7 @@ impl SpotAiAnalysisPage {
                 row.risk_score,
                 "权重 15%。先计算 24 小时振幅：(24h 最高价 - 24h 最低价) ÷ 24h 最低价 × 100%；再按 100 - 振幅(%) × 4 计分，并限制在 0～100 分。振幅越大，风险参考分越低。",
             ),
-            (
-                "市场情绪",
+            (                "市场情绪",
                 row.sentiment_score,
                 "权重 10%。使用 CoinMarketCap 全市场恐惧与贪婪指数原始值（0～100）作为情绪分。该指标反映整个加密市场，不代表当前交易对的独立情绪。若请求失败则使用 50 分中性占位。",
             ),
@@ -313,7 +311,8 @@ impl SpotAiAnalysisPage {
             .flex_1()
             .min_w(px(300.))
             .h_full()
-            .gap_3()
+            .overflow_y_scroll()
+            .gap_2()
             .p_3()
             .rounded(px(8.))
             .bg(palette::surface_strong(theme))
@@ -407,18 +406,6 @@ impl SpotAiAnalysisPage {
                     .line_height(px(17.))
                     .child("使用已有 24 小时行情、30 日均线评分与 120 日均线位置参考；均线偏离是技术参考，不代表完整技术指标。成交额排名和振幅仅是流动性参考，不等于盘口深度。未取得的多周期指标、新闻情绪和盘口数据不会伪造，AI 报告会明确标记数据缺口。"),
             )
-            .child(div().h(px(1.)).bg(palette::border(theme)))
-            .child(div().text_size(px(12.)).font_semibold().text_color(palette::text_strong(theme)).child("初步结论"))
-            .child(
-                div()
-                    .p_2()
-                    .rounded(px(6.))
-                    .bg(score_color(row.total_score, theme).opacity(0.08))
-                    .text_size(px(12.))
-                    .text_color(palette::text_strong(theme))
-                    .line_height(px(18.))
-                    .child(preliminary_conclusion(row)),
-            )
             .into_any_element()
     }
 }
@@ -447,8 +434,7 @@ impl Render for SpotAiAnalysisPage {
                         h_flex()
                             .items_center()
                             .justify_between()
-                            .gap_3()
-                            .child(
+                            .gap_3()                            .child(
                                 v_flex()
                                     .flex_1()
                                     .gap_1()
@@ -493,7 +479,6 @@ impl Render for SpotAiAnalysisPage {
                                 h_flex()
                                     .items_center()
                                     .gap_2()
-                                    .child(div().w(px(280.)).max_w(px(340.)).child(Input::new(&self.search_input).small().cleanable(true)))
                                     .child(
                                         v_flex()
                                             .relative()
@@ -533,7 +518,8 @@ impl Render for SpotAiAnalysisPage {
                                                         })),
                                                 )
                                             }),
-                                    ),
+                                    )
+                                    .child(div().w(px(280.)).max_w(px(340.)).child(Input::new(&self.search_input).small().cleanable(true))),
                             ),
                     ),
             )
@@ -597,8 +583,7 @@ fn build_analysis_rows(
         let ma120_signal = ma120
             .get(product.symbol.as_str())
             .copied()
-            .filter(|signal| signal.samples >= 120);
-        let ma120_average_price = ma120_signal.map(|signal| signal.average_price);
+            .filter(|signal| signal.samples >= 120);        let ma120_average_price = ma120_signal.map(|signal| signal.average_price);
         let ma120_samples = ma120_signal.map(|signal| signal.samples).unwrap_or(0);
         let ma120_difference_percent = ma120_signal
             .filter(|signal| signal.samples >= 120)
@@ -706,31 +691,7 @@ fn trend_color(label: &str, theme: &gpui_component::Theme) -> gpui::Hsla {
 }
 
 fn format_ma120_location(value: Option<f64>) -> String {
-    match value {
-        Some(value) if value > 1.0 => format!("线上 +{value:.2}%"),
-        Some(value) if value < -1.0 => format!("线下 {value:.2}%"),
-        Some(value) => format!("贴近 {value:+.2}%"),
-        None => String::new(),
-    }
-}
-
-fn preliminary_conclusion(row: &SpotAiAnalysisRow) -> String {
-    let score = if row.total_score >= 70.0 {
-        "综合评分较高，当前市场表现相对突出"
-    } else if row.total_score >= 55.0 {
-        "综合表现中性偏好，仍需观察后续走势"
-    } else if row.total_score >= 40.0 {
-        "综合表现一般，暂时缺少明显优势"
-    } else {
-        "综合评分偏低，当前需要重点关注风险"
-    };
-    let ma = match row.ma120_difference_percent {
-        Some(v) if v > 1.0 => "价格位于120日均线上方",
-        Some(v) if v < -1.0 => "价格位于120日均线下方",
-        Some(_) => "价格接近120日均线",
-        None => "120日均线样本不足，不纳入结论",
-    };
-    format!("{}；短期趋势为{}；{}。以上仅为行情数据初步筛选，不构成投资建议。", score, row.trend_label, ma)
+    value.map(|value| format!("{value:+.2}%")).unwrap_or_default()
 }
 
 fn format_signed_percent(value: Option<f64>) -> String {
@@ -747,8 +708,7 @@ fn format_compact(value: Option<f64>) -> String {
     let abs = value.abs();
     if abs >= 1_000_000_000.0 { format!("{:.2}B", value / 1_000_000_000.0) }
     else if abs >= 1_000_000.0 { format!("{:.2}M", value / 1_000_000.0) }
-    else if abs >= 1_000.0 { format!("{:.2}K", value / 1_000.0) }
-    else { format!("{value:.2}") }
+    else if abs >= 1_000.0 { format!("{:.2}K", value / 1_000.0) }    else { format!("{value:.2}") }
 }
 
 fn amplitude_percent(product: &MarketProduct) -> String {
@@ -801,6 +761,7 @@ fn fetch_cmc_sentiment() -> anyhow::Result<MarketSentiment> {
             "Neutral" => "中性",
             "Greed" => "贪婪",
             "Extreme Greed" => "极度贪婪",
+            "Unknown" | "unknown" => "未知",
             other => other,
         }
         .to_string();
