@@ -6,6 +6,12 @@ use std::time::Duration;
 
 pub const MARKET_PRODUCTS_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
+/// Read the existing SQLite market cache without making a network request.
+pub fn load_cached_market_products_blocking() -> anyhow::Result<Vec<MarketProduct>> {
+    let connection = super::open_default_connection()?;
+    list_market_products(&connection)
+}
+
 pub fn load_or_fetch_market_products_blocking() -> anyhow::Result<Vec<MarketProduct>> {
     let mut connection = super::open_default_connection()?;
     if is_market_products_cache_fresh(&connection, MARKET_PRODUCTS_CACHE_TTL)? {
