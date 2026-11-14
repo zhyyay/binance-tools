@@ -69,23 +69,99 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
     // 多取一根，确保即使 Binance 返回当前未收盘日线，也有足够的已收盘日线。
     // 只持久化已收盘 K 线；后续扫描仅在最新收盘日线落后时增量补齐。
     let missing_symbols = list_usdt_symbols_missing_daily_klines(&connection, days)?;
-    for symbol in missing_symbols {
+    let total_symbols = missing_symbols.len();
+    let mut completed_symbols = 0usize;
+    let mut failed_symbols = 0usize;
+
+    app_log::info!(
+        "[Binance][现货] MA{} 日线补齐开始：待处理交易对={}，采用逐个请求、分批暂停、失败重试",
+        days,
+        total_symbols
+    );
+
+    for (index, symbol) in missing_symbols.into_iter().enumerate() {
         let now = current_time_millis();
         let cached = list_spot_daily_klines(&connection, &symbol, 1000)?;
-        let closed_count = cached.iter().filter(|kline| kline.close_time < now).count();
-        // 首次建库或旧缓存缺少历史样本时补足 120 根；正常每日更新只拉最近两根。
-        let fetch_limit = if closed_count < days as usize {
-            // 无论旧缓存是否存在未收盘 K 线，只要已收盘样本不足，就重新补齐历史窗口。
+        let closed_open_times = cached
+            .iter()
+            .filter(|kline| kline.close_time < now)
+            .map(|kline| kline.open_time)
+            .collect::<Vec<_>>();
+        let closed_count = closed_open_times.len();
+        let earliest_open_time = closed_open_times.iter().copied().min();
+        let needs_historical_backfill = closed_count < days as usize
+            && earliest_open_time
+                .map(|open_time| open_time < now - i64::from(days) * DAY_MILLIS)
+                .unwrap_or(true);
+
+        // 历史数据明显不完整时补齐 MA 窗口；新上市且历史长度不足 days 的币种，
+        // 只做最近两根日线增量更新，避免每次扫描都重复请求 121 根。
+        let fetch_limit = if needs_historical_backfill {
             days.saturating_add(1).min(1000)
         } else {
-            // 已有完整历史样本时，只拉最近两根用于日更和补齐最新收盘日线。
             2
         };
-        let klines = crate::binance::spot::fetch_spot_daily_klines_blocking(
-            settings.clone(),
-            &symbol,
-            fetch_limit,
-        )?;
+
+        let mut fetched_klines = None;
+        for attempt in 1..=3 {
+            match crate::binance::spot::fetch_spot_daily_klines_blocking(
+                settings.clone(),
+                &symbol,
+                fetch_limit,
+            ) {
+                Ok(klines) => {
+                    fetched_klines = Some(klines);
+                    break;
+                }
+                Err(error) => {
+                    let error_message = format!("{:#}", error);
+                    if error_message.contains("418") {
+                        app_log::error!(
+                            "[Binance][现货] 检测到 HTTP 418，立即停止本轮 MA{} 请求以避免扩大限制：symbol={} error={}",
+                            days,
+                            symbol,
+                            error_message
+                        );
+                        return Err(error).with_context(|| {
+                            format!("Binance returned HTTP 418 while fetching daily klines: {symbol}")
+                        });
+                    }
+
+                    if attempt == 3 {
+                        app_log::warn!(
+                            "[Binance][现货] MA{} 日线拉取失败，跳过当前交易对并保留已完成数据：symbol={} attempt={}/3 error={}",
+                            days,
+                            symbol,
+                            attempt,
+                            error_message
+                        );
+                        break;
+                    }
+
+                    let delay = if error_message.contains("429") {
+                        Duration::from_secs(5 * u64::from(attempt))
+                    } else {
+                        Duration::from_millis(500 * (1_u64 << (attempt - 1)))
+                    };
+                    app_log::warn!(
+                        "[Binance][现货] MA{} 日线请求失败，准备重试：symbol={} attempt={}/3 wait={}s error={}",
+                        days,
+                        symbol,
+                        attempt,
+                        delay.as_secs_f64(),
+                        error_message
+                    );
+                    sleep(delay);
+                }
+            }
+        }
+
+        let Some(klines) = fetched_klines else {
+            failed_symbols += 1;
+            sleep(Duration::from_millis(400));
+            continue;
+        };
+
         connection
             .execute(
                 "DELETE FROM spot_klines_1d WHERE symbol = ?1 AND interval = ?2 AND close_time >= ?3",
@@ -97,8 +173,40 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
             .filter(|kline| kline.close_time < now)
             .collect::<Vec<_>>();
         upsert_spot_daily_klines(&mut connection, &closed_klines)?;
-        sleep(Duration::from_millis(150));
+
+        if closed_klines.is_empty() {
+            failed_symbols += 1;
+            app_log::warn!(
+                "[Binance][现货] MA{} 日线请求成功但没有已收盘 K 线：symbol={}，下次扫描会继续检查",
+                days,
+                symbol
+            );
+        } else {
+            completed_symbols += 1;
+        }
+
+        if (index + 1) % 10 == 0 {
+            app_log::info!(
+                "[Binance][现货] MA{} 日线补齐进度：{}/{}，成功={}，失败/待重试={}",
+                days,
+                index + 1,
+                total_symbols,
+                completed_symbols,
+                failed_symbols
+            );
+            sleep(Duration::from_secs(1));
+        } else {
+            sleep(Duration::from_millis(400));
+        }
     }
+
+    app_log::info!(
+        "[Binance][现货] MA{} 日线补齐结束：总数={}，成功={}，失败/待重试={}",
+        days,
+        total_symbols,
+        completed_symbols,
+        failed_symbols
+    );
 
     list_cached_usdt_daily_ma_signals(&connection, days)
 }
@@ -558,6 +666,7 @@ pub fn list_usdt_symbols_missing_daily_klines(
                 SELECT
                     symbol,
                     MAX(open_time) AS latest_open_time,
+                    MIN(open_time) AS earliest_open_time,
                     COUNT(*) AS closed_count
                 FROM spot_klines_1d
                 WHERE interval = ?1
@@ -576,7 +685,10 @@ pub fn list_usdt_symbols_missing_daily_klines(
                 AND (
                     k.latest_open_time IS NULL
                     OR k.latest_open_time < ?3
-                    OR COALESCE(k.closed_count, 0) < ?4
+                    OR (
+                        COALESCE(k.closed_count, 0) < ?4
+                        AND k.earliest_open_time < ?5
+                    )
                     OR unfinished.symbol IS NOT NULL
                 )
             ORDER BY s.symbol
@@ -586,7 +698,13 @@ pub fn list_usdt_symbols_missing_daily_klines(
 
     let symbols = statement
         .query_map(
-            params![DAILY_INTERVAL, now, expected_latest_open_time, i64::from(days)],
+            params![
+                DAILY_INTERVAL,
+                now,
+                expected_latest_open_time,
+                i64::from(days),
+                now - i64::from(days) * DAY_MILLIS,
+            ],
             |row| row.get::<_, String>(0),
         )
         .context("query missing USDT daily kline symbols failed")?
