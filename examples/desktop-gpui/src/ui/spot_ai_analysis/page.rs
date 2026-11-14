@@ -128,7 +128,7 @@ impl SpotAiAnalysisPage {
                     );
 
                     app_log::info!("[现货AI分析][扫描诊断] 3/4 开始获取市场情绪");
-                    let sentiment = fetch_cmc_sentiment().await.ok();
+                    let sentiment = fetch_cmc_sentiment().ok();
                     app_log::info!(
                         "[现货AI分析][扫描诊断] 3/4 市场情绪处理完成，是否获取成功={}",
                         sentiment.is_some()
@@ -619,7 +619,8 @@ fn amplitude_percent(product: &MarketProduct) -> String {
 
 
 /// CMC Keyless Public API：无需 API Key，接口缓存/更新频率为 15 分钟。
-async fn fetch_cmc_sentiment() -> anyhow::Result<MarketSentiment> {
+/// 使用 blocking reqwest：GPUI 的 background_spawn 不保证处于 Tokio Runtime 中。
+fn fetch_cmc_sentiment() -> anyhow::Result<MarketSentiment> {
     static CACHE: OnceLock<Mutex<Option<(Instant, MarketSentiment)>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(None));
     let cached = cache.lock().ok().and_then(|guard| guard.clone());
@@ -629,16 +630,15 @@ async fn fetch_cmc_sentiment() -> anyhow::Result<MarketSentiment> {
         }
     }
 
-    let fetched = async {
-        let client = reqwest::Client::builder()
+    let fetched = (|| {
+        let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(8))
             .build()?;
         let response = client
             .get("https://pro-api.coinmarketcap.com/public-api/v3/fear-and-greed/latest")
-            .send()
-            .await?
+            .send()?
             .error_for_status()?;
-        let payload: serde_json::Value = response.json().await?;
+        let payload: serde_json::Value = response.json()?;
         let data = payload
             .get("data")
             .ok_or_else(|| anyhow::anyhow!("CMC 响应缺少 data 字段"))?;
@@ -672,8 +672,7 @@ async fn fetch_cmc_sentiment() -> anyhow::Result<MarketSentiment> {
             classification,
             update_time,
         })
-    }
-    .await;
+    })();
 
     match fetched {
         Ok(sentiment) => {
