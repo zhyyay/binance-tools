@@ -253,7 +253,7 @@ impl MarketHeatmapPage {
         let size = tile_size(share);
         let symbol = product.symbol.clone();
         let text_color = hsla(0.0, 0.0, 1.0, 1.0);
-        let accent = change_color(change);
+        let accent = tile_color(change, &product.symbol);
         let display_symbol = if size.compact {
             product.base_asset.clone()
         } else {
@@ -652,15 +652,29 @@ fn weight_share(weight: f64, total_weight: f64) -> f64 {
     }
 }
 
-fn change_color(change: f64) -> Hsla {
+/// 同方向的相邻交易对使用轻微不同的明度，保持涨跌色相，同时让无间距矩形仍可辨认。
+fn tile_color(change: f64, symbol: &str) -> Hsla {
+    let hash = symbol.bytes().fold(2166136261u32, |hash, byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(16777619)
+    });
+    let shade = match hash % 5 {
+        0 => -0.045,
+        1 => -0.022,
+        2 => 0.0,
+        3 => 0.022,
+        _ => 0.045,
+    };
+
     if change > 0.0 {
-        let lightness = (0.52 + (change.abs().min(15.0) / 15.0) * 0.08) as f32;
+        let lightness = (0.52 + (change.abs().min(15.0) / 15.0) * 0.08 + shade)
+            .clamp(0.42, 0.68) as f32;
         hsla(0.42, 0.50, lightness, 1.0)
     } else if change < 0.0 {
-        let lightness = (0.61 + (change.abs().min(15.0) / 15.0) * 0.06) as f32;
+        let lightness = (0.61 + (change.abs().min(15.0) / 15.0) * 0.06 + shade)
+            .clamp(0.50, 0.74) as f32;
         hsla(0.98, 0.78, lightness, 1.0)
     } else {
-        hsla(0.42, 0.18, 0.56, 1.0)
+        hsla(0.42, 0.18, (0.56 + shade).clamp(0.48, 0.64) as f32, 1.0)
     }
 }
 
