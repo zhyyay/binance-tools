@@ -246,13 +246,15 @@ impl MarketHeatmapPage {
         &self,
         row_ix: usize,
         product: &MarketProduct,
+        row_weight: f64,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let change = product.price_change_percent.unwrap_or(0.0);
         let weight = self.weight_mode.value(product);
         let total_weight = total_weight(&self.visible_products, self.weight_mode);
         let share = weight_share(weight, total_weight);
-        let size = tile_size(row_ix, share);
+        let size = tile_size(share);
+        let width_share = if row_weight > 0.0 { (weight / row_weight) as f32 } else { 0.0 };
         let symbol = product.symbol.clone();
         let text_color = hsla(0.0, 0.0, 1.0, 1.0);
         let accent = change_color(change);
@@ -264,7 +266,7 @@ impl MarketHeatmapPage {
 
         v_flex()
             .id(("heatmap-tile", row_ix))
-            .flex_1()
+            .w(relative(width_share.clamp(0.0, 1.0)))
             .h_full()
             .min_w(px(0.))
             .min_h(px(0.))
@@ -459,17 +461,17 @@ impl Render for MarketHeatmapPage {
                             .size_full()
                             .min_h(px(0.))
                             .gap(px(4.))
-                            .children(heatmap_rows(self.visible_products.len()).into_iter().map(
-                                |(start, end)| {
+                            .children(heatmap_rows(&self.visible_products, self.weight_mode).into_iter().map(
+                                |row| {
                                     h_flex()
-                                        .flex_1()
+                                        .h(relative(row.share as f32))
                                         .w_full()
                                         .min_h(px(0.))
                                         .gap(px(4.))
-                                        .children((start..end).filter_map(|index| {
+                                        .children((row.start..row.end).filter_map(|index| {
                                             self.visible_products
                                                 .get(index)
-                                                .map(|product| self.render_tile(index, product, cx))
+                                                .map(|product| self.render_tile(index, product, row.weight, cx))
                                         }))
                                 },
                             )),
@@ -488,46 +490,108 @@ struct TileSize {
     compact: bool,
 }
 
-fn tile_size(index: usize, share: f64) -> TileSize {
-    if index < 4 || share >= 0.05 {
+fn tile_size(share: f64) -> TileSize {
+    if share >= 0.08 {
+        TileSize {
+            symbol_font: 22.0,
+            price_font: 17.0,
+            name_font: 11.0,
+            change_font: 18.0,
+            padding: 12.0,
+            compact: false,
+        }
+    } else if share >= 0.025 {
         TileSize {
             symbol_font: 17.0,
             price_font: 14.0,
             name_font: 10.0,
             change_font: 15.0,
-            padding: 10.0,
+            padding: 9.0,
             compact: false,
         }
-    } else if index < 16 || share >= 0.012 {
+    } else if share >= 0.008 {
         TileSize {
             symbol_font: 14.0,
             price_font: 12.0,
             name_font: 0.0,
             change_font: 13.0,
-            padding: 8.0,
+            padding: 7.0,
             compact: true,
         }
     } else {
         TileSize {
-            symbol_font: 12.0,
+            symbol_font: 11.0,
             price_font: 0.0,
             name_font: 0.0,
-            change_font: 12.0,
-            padding: 6.0,
+            change_font: 11.0,
+            padding: 5.0,
             compact: true,
         }
     }
 }
 
-fn heatmap_rows(len: usize) -> Vec<(usize, usize)> {
-    const COLUMNS: usize = 8;
-    let mut rows = Vec::with_capacity(len.div_ceil(COLUMNS));
-    let mut start = 0;
-    while start < len {
-        let end = (start + COLUMNS).min(len);
-        rows.push((start, end));
-        start = end;
+struct HeatmapRow {
+    start: usize,
+    end: usize,
+    weight: f64,
+    share: f64,
+}
+
+/// 按权重连续分组；行高占比 = 行内权重 / 总权重，
+/// 单元格宽度占比 = 单元格权重 / 行内权重，因此每个矩形面积正比于权重。
+fn heatmap_rows(products: &[MarketProduct], mode: HeatmapWeightMode) -> Vec<HeatmapRow> {
+    if products.is_empty() {
+        return Vec::new();
     }
+
+    let total = total_weight(products, mode);
+    if total <= 0.0 {
+        return vec![HeatmapRow {
+            start: 0,
+            end: products.len(),
+            weight: products.len() as f64,
+            share: 1.0,
+        }];
+    }
+
+    let target_rows = products.len().div_ceil(8).max(1);
+    let target_weight = total / target_rows as f64;
+    let mut rows = Vec::with_capacity(target_rows);
+    let mut start = 0;
+    let mut row_weight = 0.0;
+
+    for (index, product) in products.iter().enumerate() {
+        let weight = mode.value(product).max(0.0);
+        row_weight += weight;
+        let rows_left = target_rows.saturating_sub(rows.len() + 1);
+        let items_left = products.len().saturating_sub(index + 1);
+
+        if (row_weight >= target_weight && rows_left > 0 && items_left >= rows_left)
+            || index + 1 == products.len()
+        {
+            rows.push(HeatmapRow {
+                start,
+                end: index + 1,
+                weight: row_weight,
+                share: row_weight / total,
+            });
+            start = index + 1;
+            row_weight = 0.0;
+        }
+    }
+
+    if start < products.len() {
+        let weight = products[start..]
+            .iter()
+            .map(|product| mode.value(product).max(0.0))
+            .sum::<f64>();
+        if let Some(last) = rows.last_mut() {
+            last.end = products.len();
+            last.weight += weight;
+            last.share = last.weight / total;
+        }
+    }
+
     rows
 }
 
