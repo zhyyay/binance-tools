@@ -267,11 +267,9 @@ impl MarketHeatmapPage {
             .min_h(px(0.))
             .p(px(size.padding))
             .gap_1()
-            .rounded(px(7.))
+            .rounded(px(0.))
             .relative()
             .bg(accent)
-            .border_2()
-            .border_color(hsla(0.60, 0.12, 0.15, 1.0))
             .overflow_hidden()
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -345,7 +343,7 @@ impl MarketHeatmapPage {
                         .size_full()
                         .min_w(px(0.))
                         .min_h(px(0.))
-                        .gap(px(4.))
+                        .gap(px(0.))
                         .child(
                             div()
                                 .w(relative(*first_ratio))
