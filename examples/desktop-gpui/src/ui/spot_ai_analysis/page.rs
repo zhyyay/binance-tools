@@ -18,6 +18,7 @@ use std::{cmp::Ordering, collections::HashMap, sync::{Mutex, OnceLock}, time::{D
 
 pub enum SpotAiAnalysisEvent {
     AnalyzeWithAi { prompt: String, display_content: String },
+    OpenKline(String),
 }
 
 #[derive(Clone)]
