@@ -13,7 +13,6 @@ use std::{cmp::Ordering, collections::BTreeSet};
 
 const DEFAULT_QUOTE: &str = "USDT";
 const MAX_TILES: usize = 100;
-const MIN_SHARE_TO_SHOW: f64 = 0.0025;
 
 pub struct MarketHeatmapPage {
     search_input: Entity<InputState>,
@@ -187,9 +186,8 @@ impl MarketHeatmapPage {
                 .unwrap_or(Ordering::Equal)
                 .then_with(|| a.symbol.cmp(&b.symbol))
         });
-        let total = total_weight(&products, weight_mode);
-        products
-            .retain(|product| weight_share(weight_mode.value(product), total) >= MIN_SHARE_TO_SHOW);
+        // 按权重排序后展示前 100 个有效交易对；不再按最小占比过滤，
+        // 避免小币种被阈值直接丢弃，导致热力图面积占比失真。
         products.truncate(MAX_TILES);
         self.visible_products = products;
     }
@@ -244,17 +242,15 @@ impl MarketHeatmapPage {
 
     fn render_tile(
         &self,
-        row_ix: usize,
+        index: usize,
         product: &MarketProduct,
-        row_weight: f64,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let change = product.price_change_percent.unwrap_or(0.0);
         let weight = self.weight_mode.value(product);
-        let total_weight = total_weight(&self.visible_products, self.weight_mode);
-        let share = weight_share(weight, total_weight);
+        let total = total_weight(&self.visible_products, self.weight_mode);
+        let share = weight_share(weight, total);
         let size = tile_size(share);
-        let width_share = if row_weight > 0.0 { (weight / row_weight) as f32 } else { 0.0 };
         let symbol = product.symbol.clone();
         let text_color = hsla(0.0, 0.0, 1.0, 1.0);
         let accent = change_color(change);
@@ -265,9 +261,8 @@ impl MarketHeatmapPage {
         };
 
         v_flex()
-            .id(("heatmap-tile", row_ix))
-            .w(relative(width_share.clamp(0.0, 1.0)))
-            .h_full()
+            .id(("heatmap-tile", index))
+            .size_full()
             .min_w(px(0.))
             .min_h(px(0.))
             .p(px(size.padding))
@@ -326,6 +321,70 @@ impl MarketHeatmapPage {
                 )
             })
             .into_any_element()
+    }
+
+    fn render_treemap_node(
+        &self,
+        node: &TreemapNode,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        match node {
+            TreemapNode::Leaf(index) => self
+                .visible_products
+                .get(*index)
+                .map(|product| self.render_tile(*index, product, cx))
+                .unwrap_or_else(|| div().into_any_element()),
+            TreemapNode::Split {
+                horizontal,
+                first_ratio,
+                first,
+                second,
+            } => {
+                if *horizontal {
+                    h_flex()
+                        .size_full()
+                        .min_w(px(0.))
+                        .min_h(px(0.))
+                        .gap(px(4.))
+                        .child(
+                            div()
+                                .w(relative(*first_ratio))
+                                .h_full()
+                                .min_w(px(0.))
+                                .child(self.render_treemap_node(first, cx)),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .h_full()
+                                .min_w(px(0.))
+                                .child(self.render_treemap_node(second, cx)),
+                        )
+                        .into_any_element()
+                } else {
+                    v_flex()
+                        .size_full()
+                        .min_w(px(0.))
+                        .min_h(px(0.))
+                        .gap(px(4.))
+                        .child(
+                            div()
+                                .h(relative(*first_ratio))
+                                .w_full()
+                                .min_h(px(0.))
+                                .child(self.render_treemap_node(first, cx)),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .w_full()
+                                .min_h(px(0.))
+                                .child(self.render_treemap_node(second, cx)),
+                        )
+                        .into_any_element()
+                }
+            }
+        }
     }
 }
 
@@ -457,24 +516,33 @@ impl Render for MarketHeatmapPage {
                     .size_full()
                     .overflow_hidden()
                     .child(
-                        v_flex()
+                        div()
                             .size_full()
+                            .min_w(px(0.))
                             .min_h(px(0.))
-                            .gap(px(4.))
-                            .children(heatmap_rows(&self.visible_products, self.weight_mode).into_iter().map(
-                                |row| {
-                                    h_flex()
-                                        .h(relative(row.share as f32))
-                                        .w_full()
-                                        .min_h(px(0.))
-                                        .gap(px(4.))
-                                        .children((row.start..row.end).filter_map(|index| {
-                                            self.visible_products
-                                                .get(index)
-                                                .map(|product| self.render_tile(index, product, row.weight, cx))
-                                        }))
-                                },
-                            )),
+                            .child(
+                                if self.loading && self.visible_products.is_empty() {
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_color(palette::muted(cx.theme()))
+                                        .child("正在加载市场数据…")
+                                        .into_any_element()
+                                } else if let Some(layout) = treemap_layout(&self.visible_products, self.weight_mode) {
+                                    self.render_treemap_node(&layout, cx)
+                                } else {
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_color(palette::muted(cx.theme()))
+                                        .child("暂无符合条件的交易对")
+                                        .into_any_element()
+                                }
+                            ),
                     ),
             )
     }
@@ -492,107 +560,83 @@ struct TileSize {
 
 fn tile_size(share: f64) -> TileSize {
     if share >= 0.08 {
-        TileSize {
-            symbol_font: 22.0,
-            price_font: 17.0,
-            name_font: 11.0,
-            change_font: 18.0,
-            padding: 12.0,
-            compact: false,
-        }
+        TileSize { symbol_font: 22.0, price_font: 17.0, name_font: 11.0, change_font: 18.0, padding: 12.0, compact: false }
     } else if share >= 0.025 {
-        TileSize {
-            symbol_font: 17.0,
-            price_font: 14.0,
-            name_font: 10.0,
-            change_font: 15.0,
-            padding: 9.0,
-            compact: false,
-        }
+        TileSize { symbol_font: 17.0, price_font: 14.0, name_font: 10.0, change_font: 15.0, padding: 9.0, compact: false }
     } else if share >= 0.008 {
-        TileSize {
-            symbol_font: 14.0,
-            price_font: 12.0,
-            name_font: 0.0,
-            change_font: 13.0,
-            padding: 7.0,
-            compact: true,
-        }
+        TileSize { symbol_font: 14.0, price_font: 12.0, name_font: 0.0, change_font: 13.0, padding: 7.0, compact: true }
     } else {
-        TileSize {
-            symbol_font: 11.0,
-            price_font: 0.0,
-            name_font: 0.0,
-            change_font: 11.0,
-            padding: 5.0,
-            compact: true,
-        }
+        TileSize { symbol_font: 11.0, price_font: 0.0, name_font: 0.0, change_font: 11.0, padding: 4.0, compact: true }
     }
 }
 
-struct HeatmapRow {
-    start: usize,
-    end: usize,
-    weight: f64,
-    share: f64,
+enum TreemapNode {
+    Leaf(usize),
+    Split {
+        horizontal: bool,
+        first_ratio: f32,
+        first: Box<TreemapNode>,
+        second: Box<TreemapNode>,
+    },
 }
 
-/// 按权重连续分组；行高占比 = 行内权重 / 总权重，
-/// 单元格宽度占比 = 单元格权重 / 行内权重，因此每个矩形面积正比于权重。
-fn heatmap_rows(products: &[MarketProduct], mode: HeatmapWeightMode) -> Vec<HeatmapRow> {
-    if products.is_empty() {
-        return Vec::new();
+/// 二分矩形树图：每次沿当前区域较长的边切分，并按累计权重比例分配空间。
+/// 递归后每个叶子矩形的面积与对应市值/成交额严格成正比。
+fn treemap_layout(products: &[MarketProduct], mode: HeatmapWeightMode) -> Option<TreemapNode> {
+    let weights = products.iter().map(|p| mode.value(p)).collect::<Vec<_>>();
+    let indices = (0..products.len()).collect::<Vec<_>>();
+    build_treemap_node(&indices, &weights, 1.0, 1.0)
+}
+
+fn build_treemap_node(
+    indices: &[usize],
+    weights: &[f64],
+    width: f64,
+    height: f64,
+) -> Option<TreemapNode> {
+    if indices.is_empty() {
+        return None;
+    }
+    if indices.len() == 1 {
+        return Some(TreemapNode::Leaf(indices[0]));
     }
 
-    let total = total_weight(products, mode);
-    if total <= 0.0 {
-        return vec![HeatmapRow {
-            start: 0,
-            end: products.len(),
-            weight: products.len() as f64,
-            share: 1.0,
-        }];
-    }
+    let total = indices.iter().map(|i| weights[*i]).sum::<f64>();
+    let target = total / 2.0;
+    let mut cumulative = 0.0;
+    let mut split_at = 1usize;
+    let mut best_diff = f64::MAX;
 
-    let target_rows = products.len().div_ceil(8).max(1);
-    let target_weight = total / target_rows as f64;
-    let mut rows = Vec::with_capacity(target_rows);
-    let mut start = 0;
-    let mut row_weight = 0.0;
-
-    for (index, product) in products.iter().enumerate() {
-        let weight = mode.value(product).max(0.0);
-        row_weight += weight;
-        let rows_left = target_rows.saturating_sub(rows.len() + 1);
-        let items_left = products.len().saturating_sub(index + 1);
-
-        if (row_weight >= target_weight && rows_left > 0 && items_left >= rows_left)
-            || index + 1 == products.len()
-        {
-            rows.push(HeatmapRow {
-                start,
-                end: index + 1,
-                weight: row_weight,
-                share: row_weight / total,
-            });
-            start = index + 1;
-            row_weight = 0.0;
+    for (position, index) in indices.iter().enumerate().take(indices.len() - 1) {
+        cumulative += weights[*index];
+        let diff = (cumulative - target).abs();
+        if diff < best_diff {
+            best_diff = diff;
+            split_at = position + 1;
         }
     }
 
-    if start < products.len() {
-        let weight = products[start..]
-            .iter()
-            .map(|product| mode.value(product).max(0.0))
-            .sum::<f64>();
-        if let Some(last) = rows.last_mut() {
-            last.end = products.len();
-            last.weight += weight;
-            last.share = last.weight / total;
-        }
-    }
+    let first_indices = &indices[..split_at];
+    let second_indices = &indices[split_at..];
+    let first_weight = first_indices.iter().map(|i| weights[*i]).sum::<f64>();
+    let ratio = if total > 0.0 {
+        (first_weight / total).clamp(0.0001, 0.9999)
+    } else {
+        first_indices.len() as f64 / indices.len() as f64
+    };
+    let horizontal = width >= height;
+    let (first_width, first_height, second_width, second_height) = if horizontal {
+        (width * ratio, height, width * (1.0 - ratio), height)
+    } else {
+        (width, height * ratio, width, height * (1.0 - ratio))
+    };
 
-    rows
+    Some(TreemapNode::Split {
+        horizontal,
+        first_ratio: ratio as f32,
+        first: Box::new(build_treemap_node(first_indices, weights, first_width, first_height)?),
+        second: Box::new(build_treemap_node(second_indices, weights, second_width, second_height)?),
+    })
 }
 
 fn total_weight(products: &[MarketProduct], weight_mode: HeatmapWeightMode) -> f64 {
