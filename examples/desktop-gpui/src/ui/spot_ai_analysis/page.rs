@@ -111,12 +111,36 @@ impl SpotAiAnalysisPage {
         self._load_task = cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
+                    app_log::info!("[现货AI分析][扫描诊断] 1/4 开始刷新 Binance 行情");
                     let products =
                         binance_tools::db::market::refresh_market_products_blocking()?;
+                    app_log::info!(
+                        "[现货AI分析][扫描诊断] 1/4 行情刷新完成，产品数量={}",
+                        products.len()
+                    );
+
+                    app_log::info!("[现货AI分析][扫描诊断] 2/4 开始读取 30 日日线均线缓存");
                     let cached_ma = binance_tools::db::spot::load_cached_usdt_daily_ma_signals_blocking(30)
                         .unwrap_or_default();
+                    app_log::info!(
+                        "[现货AI分析][扫描诊断] 2/4 均线缓存读取完成，记录数量={}",
+                        cached_ma.len()
+                    );
+
+                    app_log::info!("[现货AI分析][扫描诊断] 3/4 开始获取市场情绪");
                     let sentiment = fetch_cmc_sentiment().await.ok();
-                    Ok::<_, anyhow::Error>((build_analysis_rows(products, &cached_ma, sentiment.as_ref()), sentiment))
+                    app_log::info!(
+                        "[现货AI分析][扫描诊断] 3/4 市场情绪处理完成，是否获取成功={}",
+                        sentiment.is_some()
+                    );
+
+                    app_log::info!("[现货AI分析][扫描诊断] 4/4 开始计算评分并构建表格数据");
+                    let rows = build_analysis_rows(products, &cached_ma, sentiment.as_ref());
+                    app_log::info!(
+                        "[现货AI分析][扫描诊断] 4/4 评分计算完成，候选行数={}",
+                        rows.len()
+                    );
+                    Ok::<_, anyhow::Error>((rows, sentiment))
                 })
                 .await;
 
