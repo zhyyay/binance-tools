@@ -264,11 +264,10 @@ impl MarketHeatmapPage {
 
         v_flex()
             .id(("heatmap-tile", row_ix))
-            .flex_basis(px(size.width))
-            .flex_grow()
-            .h(px(size.height))
-            .min_w(px(82.))
-            .min_h(px(58.))
+            .flex_1()
+            .h_full()
+            .min_w(px(0.))
+            .min_h(px(0.))
             .p(px(size.padding))
             .gap_1()
             .rounded(px(7.))
@@ -454,16 +453,19 @@ impl Render for MarketHeatmapPage {
                 div()
                     .flex_1()
                     .size_full()
-                    .overflow_y_scrollbar()
+                    .overflow_hidden()
                     .child(
                         v_flex()
-                            .w_full()
-                            .gap(px(0.))
+                            .size_full()
+                            .min_h(px(0.))
+                            .gap(px(4.))
                             .children(heatmap_rows(self.visible_products.len()).into_iter().map(
                                 |(start, end)| {
                                     h_flex()
+                                        .flex_1()
                                         .w_full()
-                                        .gap(px(0.))
+                                        .min_h(px(0.))
+                                        .gap(px(4.))
                                         .children((start..end).filter_map(|index| {
                                             self.visible_products
                                                 .get(index)
@@ -478,8 +480,6 @@ impl Render for MarketHeatmapPage {
 
 #[derive(Clone, Copy)]
 struct TileSize {
-    width: f32,
-    height: f32,
     symbol_font: f32,
     price_font: f32,
     name_font: f32,
@@ -489,61 +489,45 @@ struct TileSize {
 }
 
 fn tile_size(index: usize, share: f64) -> TileSize {
-    if index < 4 {
+    if index < 4 || share >= 0.05 {
         TileSize {
-            width: if index == 0 { 390.0 } else { 292.0 },
-            height: 300.0,
-            symbol_font: if index < 2 { 30.0 } else { 28.0 },
-            price_font: if index < 2 { 24.0 } else { 22.0 },
-            name_font: 12.0,
-            change_font: if index < 2 { 24.0 } else { 22.0 },
-            padding: if index < 2 { 26.0 } else { 24.0 },
+            symbol_font: 17.0,
+            price_font: 14.0,
+            name_font: 10.0,
+            change_font: 15.0,
+            padding: 10.0,
             compact: false,
         }
-    } else if index < 8 || share >= 0.025 {
+    } else if index < 16 || share >= 0.012 {
         TileSize {
-            width: 230.0,
-            height: 140.0,
-            symbol_font: 24.0,
-            price_font: 18.0,
-            name_font: 11.0,
-            change_font: 18.0,
-            padding: 16.0,
-            compact: false,
+            symbol_font: 14.0,
+            price_font: 12.0,
+            name_font: 0.0,
+            change_font: 13.0,
+            padding: 8.0,
+            compact: true,
         }
     } else {
         TileSize {
-            width: 92.0,
-            height: 92.0,
-            symbol_font: 16.0,
+            symbol_font: 12.0,
             price_font: 0.0,
             name_font: 0.0,
-            change_font: 15.0,
-            padding: 10.0,
+            change_font: 12.0,
+            padding: 6.0,
             compact: true,
         }
     }
 }
 
 fn heatmap_rows(len: usize) -> Vec<(usize, usize)> {
-    let mut rows = Vec::new();
+    const COLUMNS: usize = 8;
+    let mut rows = Vec::with_capacity(len.div_ceil(COLUMNS));
     let mut start = 0;
-
-    for row_size in [4, 4] {
-        if start >= len {
-            return rows;
-        }
-        let end = (start + row_size).min(len);
-        rows.push((start, end));
-        start = end;
-    }
-
     while start < len {
-        let end = (start + 10).min(len);
+        let end = (start + COLUMNS).min(len);
         rows.push((start, end));
         start = end;
     }
-
     rows
 }
 
