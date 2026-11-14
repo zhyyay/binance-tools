@@ -350,6 +350,7 @@ impl SpotAiAnalysisPage {
                     .child(detail_stat("最新价格", format_price(row.product.last_price), theme))
                     .child(detail_stat("24h 成交额", format_compact(row.product.quote_volume), theme))
                     .child(detail_stat("24h 振幅", amplitude_percent(&row.product), theme))
+                    .child(detail_stat("120日均线价", format_price(row.ma120_average_price), theme))
                     .child(detail_stat_colored(
                         "120日线位置",
                         format_ma120_location(row.ma120_difference_percent),
