@@ -75,7 +75,7 @@ impl SpotAiAnalysisTableDelegate {
     ) -> AnyElement {
         let page = self.page.clone();
         let symbol = row.product.symbol.clone();
-        Button::new(("spot-ai-row-cell", row_ix, col_ix))
+        Button::new(("spot-ai-row-cell", row_ix * self.columns.len() + col_ix))
             .ghost()
             .xsmall()
             .w_full()
