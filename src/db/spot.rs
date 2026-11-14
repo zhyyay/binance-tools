@@ -100,7 +100,7 @@ pub fn load_or_fetch_usdt_daily_ma_signals_blocking(
             .checked_add_months(Months::new(1))
             .context("calculate next archive month failed")?;
         let release_date = first_monday_of_month(next_month);
-        let monthly_available = month < current_month && today >= release_date;
+        let monthly_available = month < current_month && today >= release_date + ChronoDuration::days(2);
 
         if monthly_available {
             let period = month.format("%Y-%m").to_string();
@@ -413,7 +413,8 @@ pub fn load_or_fetch_spot_daily_klines_blocking(
             .checked_add_months(Months::new(1))
             .context("calculate next single-symbol archive month failed")?;
         let monthly_available =
-            month < current_month && today >= first_monday_of_month(next_month);
+            month < current_month
+                && today >= first_monday_of_month(next_month) + ChronoDuration::days(2);
 
         if monthly_available {
             let job = SpotDailyArchiveJob {
