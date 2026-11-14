@@ -9,6 +9,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
+    scroll::ScrollableElement,
     table::{Table as DataTable, TableState},
     tooltip::Tooltip,
     v_flex,
